@@ -1,0 +1,12 @@
+[package]
+name = "galview"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.34.2"
+egui = "0.34.2"
+egui_extras = { version = "0.34.2", features = ["file", "gif", "image", "svg", "webp"] }
+env_logger = "0.11.10"
+image = "0.25.10"
+log = "0.4.29"
