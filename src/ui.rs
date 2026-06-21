@@ -24,18 +24,19 @@ impl UiExt for Ui {
 }
 
 impl App {
-    fn draw_thumbnail(&self, ui: &mut Ui, label: &str, path: &Path, cell_size: Vec2, cursor: bool) {
+    fn draw_thumbnail(&self, ui: &mut Ui, label: &str, path: &Path, cell_size: Vec2, is_hovered: bool) {
         let uri = format!("file://{}", path.to_str().unwrap());
         let img = Image::from_uri(uri).fit_to_exact_size(cell_size);
         let resp = ui.add(img).on_hover_text_at_pointer(label);
 
-        if cursor {
+        if is_hovered {
             ui.painter().rect_stroke(
                 resp.rect,
                 0.,
                 egui::Stroke::new(3.0f32, egui::Color32::from_rgb(255, 200, 0)),
                 egui::StrokeKind::Outside,
             );
+            resp.scroll_to_me(Some(egui::Align::Center));
         }
     }
 
@@ -54,15 +55,16 @@ impl App {
         let n_rows = n_rows + if rest > 0 { 1 } else { 0 };
         let cell_size = (max_size + spacing) / Vec2::new(n_rows as f32, n_cols as f32);
 
-        self.grid = Some((n_rows, n_cols));
+        self.grid_size = Vec2::new(n_rows as f32, n_cols as f32);
 
         ui.columns(n_cols, |cols| {
             for (i, entry) in self.entries.iter().enumerate() {
+                let is_hovered = self.cursor == i;
                 let col = &mut cols[i % n_cols];
                 col.vertical_centered(|ui| {
                     let label = entry.file_name().unwrap().to_str().unwrap();
                     let thumb = self.find_thumbnail(entry);
-                    self.draw_thumbnail(ui, label, thumb.as_ref(), cell_size, self.cursor == i);
+                    self.draw_thumbnail(ui, label, thumb.as_ref(), cell_size, is_hovered);
                 });
             }
         });

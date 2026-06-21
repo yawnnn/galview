@@ -1,50 +1,105 @@
+use core::str;
 use egui::{Key, Vec2};
 use std::{
     borrow::Cow,
-    env,
+    cmp, env, iter,
     path::{Path, PathBuf},
 };
 
-use crate::{common::{NumExt, frame_start}, ui::UiExt};
+use crate::{
+    common::{NumExt, frame_start},
+    ui::UiExt,
+};
+
+/// compare strings with awareness of number substrings
+fn smart_str_cmp(a: &str, b: &str) -> cmp::Ordering {
+    fn take_number(chars: &mut iter::Peekable<str::Chars>) -> u64 {
+        let mut n: u64 = 0;
+        while let Some(&c) = chars.peek()
+            && c.is_ascii_digit()
+        {
+            n = n.saturating_mul(10).saturating_add(c as u64 - '0' as u64);
+            chars.next();
+        }
+        n
+    }
+
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    loop {
+        match (a_chars.peek(), b_chars.peek()) {
+            (None, None) => return cmp::Ordering::Equal,
+            (None, Some(_)) => return cmp::Ordering::Less,
+            (Some(_), None) => return cmp::Ordering::Greater,
+            (Some(&ac), Some(&bc)) => {
+                if ac.is_ascii_digit() && bc.is_ascii_digit() {
+                    let a_num = take_number(&mut a_chars);
+                    let b_num = take_number(&mut b_chars);
+                    match a_num.cmp(&b_num) {
+                        cmp::Ordering::Equal => continue,
+                        other => return other,
+                    }
+                } else {
+                    match ac.cmp(&bc) {
+                        cmp::Ordering::Equal => {
+                            a_chars.next();
+                            b_chars.next();
+                        }
+                        other => return other,
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct App {
+    pub pics_dir: PathBuf,
+    pub res_dir: PathBuf,
     pub window_size: Vec2,
-    pub root: PathBuf,
-    pub resources_dir: PathBuf,
+    pub grid_size: Vec2,
     pub entries: Vec<PathBuf>,
     pub cursor: usize,
-    pub grid: Option<(usize, usize)>,
 }
 
 impl App {
     pub fn new() -> Self {
         let home = PathBuf::from(env::var("HOME").unwrap());
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let resources_dir = manifest_dir.join("resources");
-        let root = home.join("Pictures");
-        let entries = Self::read_dir(&root);
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or("..".into()));
+        let res_dir = manifest_dir.join("resources");
+        let pics_dir = home.join("Pictures");
+        let entries = Self::read_dir(&pics_dir);
         App {
-            resources_dir,
-            root,
+            res_dir,
+            pics_dir,
             entries,
             ..Default::default()
         }
     }
 
     pub fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.resources_dir.join(name)
+        self.res_dir.join(name)
     }
 
     pub fn read_dir(dir: &Path) -> Vec<PathBuf> {
-        dir.read_dir()
+        let mut entries: Vec<_> = dir
+            .read_dir()
             .unwrap_or_else(|e| panic!("{:?}: {e}", dir))
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .collect()
+            .collect();
+        entries.sort_by(|a, b| {
+            let a = a.file_name().unwrap().to_string_lossy();
+            let b = b.file_name().unwrap().to_string_lossy();
+            smart_str_cmp(&a, &b)
+        });
+
+        entries
     }
 
-    pub fn folder_find_thumbnail(folder: &Path) -> Option<PathBuf> {
+    pub fn find_folder_thumbnail(folder: &Path) -> Option<PathBuf> {
         for e in folder.read_dir().ok()? {
             let e = e.ok()?;
             if e.metadata().unwrap().is_file() {
@@ -55,7 +110,7 @@ impl App {
         for e in folder.read_dir().ok()? {
             let e = e.ok()?;
             if e.metadata().unwrap().is_dir()
-                && let Some(p) = Self::folder_find_thumbnail(&e.path())
+                && let Some(p) = Self::find_folder_thumbnail(&e.path())
             {
                 return Some(p);
             }
@@ -67,7 +122,7 @@ impl App {
     pub fn find_thumbnail<'a>(&self, entry: &'a PathBuf) -> Cow<'a, Path> {
         if entry.metadata().unwrap().is_file() {
             entry.into()
-        } else if let Some(p) = Self::folder_find_thumbnail(entry) {
+        } else if let Some(p) = Self::find_folder_thumbnail(entry) {
             p.into()
         } else {
             self.res_path("folder.svg").into()
@@ -75,24 +130,20 @@ impl App {
     }
 
     pub fn change_dir(&mut self, new_dir: PathBuf) {
-        self.root = new_dir;
-        self.entries = Self::read_dir(&self.root);
+        self.pics_dir = new_dir;
+        self.entries = Self::read_dir(&self.pics_dir);
         self.cursor = 0;
     }
 
     pub fn move_cursor(&mut self, key: &Key) {
         let max = self.entries.len();
-        match key {
-            Key::ArrowLeft => self.cursor = self.cursor.modulo_sub(1, max),
-            Key::ArrowRight => self.cursor = self.cursor.modulo_add(1, max),
-            Key::ArrowUp if let Some(grid) = self.grid => {
-                self.cursor = self.cursor.modulo_sub(grid.1, max)
-            }
-            Key::ArrowDown if let Some(grid) = self.grid => {
-                self.cursor = self.cursor.modulo_add(grid.1, max)
-            }
+        self.cursor = match key {
+            Key::ArrowLeft => self.cursor.modulo_sub(1, max),
+            Key::ArrowRight => self.cursor.modulo_add(1, max),
+            Key::ArrowUp => self.cursor.modulo_sub(self.grid_size.y as usize, max),
+            Key::ArrowDown => self.cursor.modulo_add(self.grid_size.y as usize, max),
             _ => unreachable!(),
-        }
+        };
     }
 
     pub fn handle_input(&mut self, ui: &mut egui::Ui) {
@@ -107,7 +158,7 @@ impl App {
                     self.change_dir(entry.clone());
                 }
             }
-            Key::Backspace => self.change_dir(self.root.parent().unwrap().into()),
+            Key::Backspace => self.change_dir(self.pics_dir.parent().unwrap().into()),
             Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
             _ => (),
         });
