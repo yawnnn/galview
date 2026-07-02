@@ -10,3 +10,6 @@ egui_extras = { path = "../egui/crates/egui_extras", features = ["file", "gif", 
 image = { version = "0.25" }
 log = "0.4.29"
 env_logger = "0.11.10"
+
+[profile.release]
+debug = true
