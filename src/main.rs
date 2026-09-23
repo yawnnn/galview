@@ -1,15 +1,14 @@
 mod app;
-mod ui;
 mod common;
+mod ui;
 
-use crate::app::App;
+use crate::app::*;
 
 fn main() -> eframe::Result {
     env_logger::init();
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-        .with_maximized(true),
+        viewport: egui::ViewportBuilder::default().with_maximized(true),
         ..Default::default()
     };
     eframe::run_native(

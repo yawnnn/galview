@@ -3,6 +3,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
+    path::Path,
 };
 
 thread_local! {
@@ -20,12 +21,12 @@ pub fn frame_count() -> u64 {
     FRAME_COUNT.get()
 }
 
-type SrcPosition = (*const u8, u32, u32);
+type SrcPosition = (&'static str, u32, u32);
 
 #[macro_export]
 macro_rules! src_pos {
     () => {
-        (file!().as_ptr(), line!(), column!())
+        (file!(), line!(), column!())
     };
 }
 
@@ -105,5 +106,15 @@ impl NumExt for usize {
 
     fn modulo_sub(self, rhs: Self, modulo: Self) -> Self {
         (self as isize - rhs as isize).rem_euclid(modulo as isize) as usize
+    }
+}
+
+pub trait PathExt {
+    fn to_uri(&self) -> String;
+}
+
+impl PathExt for Path {
+    fn to_uri(&self) -> String {
+        format!("file://{}", self.to_str().unwrap())
     }
 }
