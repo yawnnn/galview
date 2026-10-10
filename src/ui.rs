@@ -2,7 +2,7 @@ use eframe::egui;
 use egui::{
     CentralPanel, Color32, Event, Image, Key, Label, Response, RichText, ScrollArea, Ui, Vec2,
 };
-use std::{borrow::Cow, ops::Sub, path::Path};
+use std::{ops::Sub, path::Path};
 
 use crate::{App, app::Mode, common::*};
 
@@ -25,8 +25,46 @@ impl UiExt for Ui {
     }
 }
 
-const MAX_ROWS: usize = 5;
-const MAX_COLS: usize = 5;
+const MAX_ROWS: usize = 4;
+const MAX_COLS: usize = 4;
+
+#[allow(unused)]
+#[derive(Clone, Copy, Default)]
+struct GridLayout {
+    cols: usize,
+    rows: usize,
+    size: Vec2, // x: cols y: rows
+    cell_size: Vec2,
+    label_height: f32,
+}
+
+impl GridLayout {
+    fn new(ui: &Ui, cells: usize) -> GridLayout {
+        let cells = cells.min(MAX_COLS * MAX_ROWS);
+        if cells == 0 {
+            return GridLayout::default();
+        }
+        let spacing = ui.spacing().item_spacing;
+        let cols = cells.min(MAX_COLS); // prioritize laying out columns
+        let rows = cells.div_ceil(cols);
+        let size = Vec2::new(cols as f32, rows as f32);
+        let available = ui.available_size();
+        let label_height = ui.text_style_height(&egui::TextStyle::Body);
+        // window_margin is a smidgeon too much, ui.spacing().item_spacing.y is too little
+        let label_size = label_height + ui.style().spacing.window_margin.bottom as f32 - 1.;
+        let mut raw_cell_size = spacing * size.sub(Vec2::ONE);
+        raw_cell_size.y += label_size * size.y;
+        let cell_size = ((available - raw_cell_size) / size).max(Vec2::ZERO);
+
+        GridLayout {
+            cols,
+            rows,
+            size,
+            cell_size,
+            label_height,
+        }
+    }
+}
 
 impl App {
     fn draw_image(&self, ui: &mut Ui, path: &Path, size: Vec2) -> Response {
@@ -39,9 +77,12 @@ impl App {
         ui: &mut Ui,
         entry: &Path,
         thumb: &Path,
-        cell_size: Vec2,
-        is_hovered: bool,
+        grid: &GridLayout,
+        hovered: bool,
+        scroll_to_me: bool,
     ) {
+        ui.set_width(grid.cell_size.x);
+
         let hover_text = thumb
             .parent()
             .unwrap()
@@ -49,62 +90,59 @@ impl App {
             .unwrap()
             .to_string_lossy();
         let resp = self
-            .draw_image(ui, thumb, cell_size)
+            .draw_image(ui, thumb, grid.cell_size)
             .on_hover_text_at_pointer(hover_text);
 
-        if is_hovered {
-            //resp.scroll_to_me(Some(egui::Align::Center));
+        let label = entry.file_name().unwrap().to_string_lossy();
+        ui.add(Label::new(
+            RichText::new(label)
+                .size(grid.label_height)
+                .color(Color32::GRAY)
+                .strong(),
+        ));
+
+        if hovered {
             ui.painter().rect_stroke(
                 resp.rect,
                 0.,
                 egui::Stroke::new(3.0f32, egui::Color32::from_rgb(255, 200, 0)),
                 egui::StrokeKind::Outside,
             );
-            resp.scroll_to_me(Some(egui::Align::Center));
         }
 
-        let label = entry.file_name().unwrap().to_string_lossy();
-        ui.add(Label::new(
-            RichText::new(label).size(15.).color(Color32::GRAY).strong(),
-        ));
+        if scroll_to_me {
+            resp.scroll_to_me(Some(egui::Align::Center));
+        }
     }
 
     fn draw_grid(&mut self, ui: &mut Ui) {
-        const MAX_CELLS: usize = MAX_ROWS * MAX_COLS;
-        let n_cells = self.curr_entries.len().min(MAX_CELLS);
-        if n_cells == 0 {
-            return;
-        }
+        let grid = GridLayout::new(ui, self.curr_entries.len());
 
-        let spacing = ui.spacing().item_spacing;
-        let available = ui.available_size();
-        let n_cols = n_cells.min(MAX_COLS); // prioritize laying out columns
-        let n_rows = n_cells.div_ceil(n_cols);
-        let grid_size = Vec2::new(n_cols as f32, n_rows as f32);
-        let label_height = 20.0; // 15pt font + some padding
-        let mut total_spacing = spacing * grid_size.sub(Vec2::ONE);
-        total_spacing.y -= label_height * n_rows as f32;
-        let img_size = ((available - total_spacing) / grid_size).max(Vec2::ZERO);
-
-        self.grid_size = grid_size;
+        self.grid_size = grid.size;
+        let mut prev_entry = self.prev_entry;
 
         egui::Grid::new("thumb_grid")
-            .num_columns(n_cols)
+            .num_columns(grid.cols)
             .show(ui, |ui| {
                 for (i, entry) in self.curr_entries.iter().enumerate() {
-                    let is_hovered = self.curr_entry == i;
-
                     ui.vertical_centered(|ui| {
-                        ui.set_width(img_size.x);
-                        let thumb = self.find_thumbnail(Cow::from(entry));
-                        self.draw_entry(ui, entry, &thumb, img_size, is_hovered);
+                        let thumb = self.find_thumbnail(entry);
+                        let hovered = self.curr_entry == i;
+                        // calling scroll_to_me every time, causes a weird glitch
+                        let scroll_to_me = hovered && self.curr_entry != prev_entry;
+                        if scroll_to_me {
+                            prev_entry = self.curr_entry;
+                        }
+                        self.draw_entry(ui, entry, &thumb, &grid, hovered, scroll_to_me);
                     });
 
-                    if (i + 1) % n_cols == 0 {
+                    if (i + 1) % grid.cols == 0 {
                         ui.end_row();
                     }
                 }
             });
+
+        self.prev_entry = prev_entry;
     }
 
     fn draw_dirs(&mut self, ui: &mut Ui) {

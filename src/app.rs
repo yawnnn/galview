@@ -118,13 +118,16 @@ pub enum Mode {
 pub struct App {
     pub res_dir: PathBuf,
     pub window_size: Vec2,
-    pub grid_size: Vec2,
 
     // UI state
     pub mode: Mode,
     pub curr_dir: PathBuf,
     pub curr_entries: Vec<PathBuf>,
     pub curr_entry: usize,
+
+    // UI cache
+    pub grid_size: Vec2,
+    pub prev_entry: usize,
 }
 
 impl App {
@@ -138,6 +141,7 @@ impl App {
             res_dir,
             curr_dir,
             curr_entries,
+            prev_entry: usize::MAX,
             ..Default::default()
         }
     }
@@ -150,10 +154,10 @@ impl App {
         self.res_dir.join(name)
     }
 
-    pub fn find_thumbnail<'a>(&self, entry: Cow<'a, Path>) -> Cow<'a, Path> {
+    pub fn find_thumbnail<'a>(&self, entry: &'a Path) -> Cow<'a, Path> {
         if entry.is_file() {
-            entry
-        } else if let Some(p) = find_folder_thumbnail(&entry) {
+            Cow::from(entry)
+        } else if let Some(p) = find_folder_thumbnail(entry) {
             p.into()
         } else {
             self.res_path("folder.svg").into()
