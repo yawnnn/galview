@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
@@ -45,12 +47,35 @@ thread_local! {
     static RAN_X_FRAME: RefCell<HashMap<SrcPosition, u64>> = RefCell::default();
 }
 
-pub fn run_one_frame(src_pos: SrcPosition, inner: impl FnOnce()) {
+pub fn run_one_frame(src_pos: SrcPosition, not_first: bool, inner: impl FnOnce()) {
+    let frame_count = frame_count();
+    if not_first && frame_count <= 1 {
+        return;
+    }
+
     RAN_X_FRAME.with_borrow_mut(|ran| match ran.get(&src_pos) {
-        Some(v) if *v == frame_count() => inner(),
+        Some(v) if *v == frame_count => inner(),
         None => {
             inner();
-            ran.insert(src_pos, frame_count());
+            ran.insert(src_pos, frame_count);
+        }
+        _ => (),
+    });
+}
+
+thread_local! {
+    static RAN_X_TIME: RefCell<HashMap<SrcPosition, Instant>> = RefCell::default();
+}
+
+pub fn run_timed(src_pos: SrcPosition, timer: Duration, inner: impl FnOnce()) {
+    RAN_X_TIME.with_borrow_mut(|ran| match ran.get(&src_pos) {
+        Some(v) if v.elapsed() >= timer => {
+            inner();
+            ran.insert(src_pos, Instant::now());
+        }
+        None => {
+            inner();
+            ran.insert(src_pos, Instant::now());
         }
         _ => (),
     });
@@ -76,8 +101,8 @@ macro_rules! println_once {
 
 #[macro_export]
 macro_rules! print_one_frame {
-    ($($arg:tt)*) => {{
-        $crate::logging::run_one_frame($crate::src_pos!(), || {
+    ($not_first:expr, $($arg:tt)*) => {{
+        $crate::logging::run_one_frame($crate::src_pos!(), $not_first, || {
             print!($($arg)*)
         });
     }};
@@ -85,8 +110,26 @@ macro_rules! print_one_frame {
 
 #[macro_export]
 macro_rules! println_one_frame {
-    ($($arg:tt)*) => {{
-        $crate::logging::run_one_frame($crate::src_pos!(), || {
+    ($not_first:expr, $($arg:tt)*) => {{
+        $crate::logging::run_one_frame($crate::src_pos!(), $not_first, || {
+            println!($($arg)*)
+        });
+    }};
+}
+
+#[macro_export]
+macro_rules! print_timed {
+    ($timer:expr, $($arg:tt)*) => {{
+        $crate::logging::run_timed($crate::src_pos!(), std::time::Duration::from_millis($timer), || {
+            print!($($arg)*)
+        });
+    }};
+}
+
+#[macro_export]
+macro_rules! println_timed {
+    ($timer:expr, $($arg:tt)*) => {{
+        $crate::logging::run_timed($crate::src_pos!(), std::time::Duration::from_millis($timer), || {
             println!($($arg)*)
         });
     }};

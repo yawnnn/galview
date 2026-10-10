@@ -29,7 +29,7 @@ const MAX_ROWS: usize = 5;
 const MAX_COLS: usize = 5;
 
 impl App {
-    fn add_image(&self, ui: &mut Ui, path: &Path, size: Vec2) -> Response {
+    fn draw_image(&self, ui: &mut Ui, path: &Path, size: Vec2) -> Response {
         let img = Image::from_uri(path.to_uri()).fit_to_exact_size(size);
         ui.add(img)
     }
@@ -49,7 +49,7 @@ impl App {
             .unwrap()
             .to_string_lossy();
         let resp = self
-            .add_image(ui, thumb, cell_size)
+            .draw_image(ui, thumb, cell_size)
             .on_hover_text_at_pointer(hover_text);
 
         if is_hovered {
@@ -113,15 +113,17 @@ impl App {
         });
     }
 
+    fn draw_files(&mut self, ui: &mut Ui) {
+        ui.centered_and_justified(|ui| {
+            self.draw_image(ui, self.curr_entry().unwrap(), ui.available_size());
+        });
+    }
+
     pub fn draw(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         CentralPanel::default().show(ui, |ui| {
             match self.mode {
                 Mode::Dirs => self.draw_dirs(ui),
-                Mode::Files => {
-                    ui.centered_and_justified(|ui| {
-                        self.add_image(ui, self.curr_entry().unwrap(), ui.available_size());
-                    });
-                }
+                Mode::Files => self.draw_files(ui),
             };
         });
     }
