@@ -9,8 +9,28 @@ use std::{
 
 use crate::{common::*, logging::*, ui::UiExt};
 
+use egui_extras::loaders::webp_loader;
+
+pub fn enable_animations(ctx: &egui::Context) {
+    if !ctx.is_loader_installed(webp_loader::WebPLoader::ID) {
+        let webp_loader = webp_loader::WebPLoader::default();
+        ctx.add_image_loader(std::sync::Arc::new(webp_loader));
+    }
+}
+
+pub fn disable_animations(ctx: &egui::Context) {
+    let loaders = ctx.loaders();
+    let mut img_loaders = loaders.image.lock();
+    if let Some(pos) = img_loaders
+        .iter()
+        .position(|loader| loader.id() == webp_loader::WebPLoader::ID)
+    {
+        img_loaders.remove(pos);
+    }
+}
+
 /// compare strings with awareness of number substrings
-fn smart_str_cmp(a: &str, b: &str) -> cmp::Ordering {
+fn natural_cmp(a: &str, b: &str) -> cmp::Ordering {
     fn take_number(chars: &mut iter::Peekable<str::Chars>) -> u64 {
         let mut n: u64 = 0;
         while let Some(&c) = chars.peek()
@@ -60,7 +80,7 @@ pub fn read_dir(dir: &Path) -> Vec<PathBuf> {
     entries.sort_by(|a, b| {
         let a = a.file_name().unwrap().to_string_lossy();
         let b = b.file_name().unwrap().to_string_lossy();
-        smart_str_cmp(&a, &b)
+        natural_cmp(&a, &b)
     });
 
     entries
@@ -76,14 +96,10 @@ fn nav_dir(directory: &mut PathBuf, direction: Direction) -> Vec<PathBuf> {
     let mut entries: Vec<_>;
 
     loop {
-        if matches!(direction, Direction::Up) {
-            println!("reading {dir:?}");
-        }
         entries = read_dir(&dir);
         if entries.len() != 1 || entries[0].is_file() {
             break;
         }
-        println!("looping");
         match direction {
             Direction::Up => dir = dir.parent().unwrap().to_owned(),
             Direction::Down => dir = entries.pop().unwrap(),
@@ -179,6 +195,10 @@ impl App {
     pub fn change_mode(&mut self, ctx: &egui::Context, mode: Mode) {
         if self.mode == mode {
             return;
+        }
+        match mode {
+            Mode::Files => enable_animations(ctx),
+            Mode::Dirs => disable_animations(ctx),
         }
         ctx.forget_all_images();
         ctx.request_repaint(); // after i enabled animation (it shouldn't make a difference anyways cause i dropped everything before)
