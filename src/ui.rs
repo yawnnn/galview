@@ -25,8 +25,8 @@ impl UiExt for Ui {
     }
 }
 
-const MAX_ROWS: usize = 4;
-const MAX_COLS: usize = 4;
+const MAX_COLS: usize = 5;
+const MAX_ROWS: usize = 3;
 
 #[allow(unused)]
 #[derive(Clone, Copy, Default)]
@@ -83,23 +83,20 @@ impl App {
     ) {
         ui.set_width(grid.img_size.x);
 
+        let img_rect = egui::Rect::from_min_size(ui.cursor().min, grid.img_size);
+        let resp = if ui.is_rect_visible(img_rect) {
+            self.draw_image(ui, thumb, grid.img_size)
+        } else {
+            ui.allocate_response(grid.img_size, egui::Sense::hover())
+        };
+
         let hover_text = thumb
             .parent()
             .unwrap()
             .file_name()
             .unwrap()
             .to_string_lossy();
-        let resp = self
-            .draw_image(ui, thumb, grid.img_size)
-            .on_hover_text_at_pointer(hover_text);
-
-        let label = entry.file_name().unwrap().to_string_lossy();
-        ui.add(Label::new(
-            RichText::new(label)
-                .size(grid.label_size)
-                .color(Color32::GRAY)
-                .strong(),
-        ));
+        let resp = resp.on_hover_text_at_pointer(hover_text);
 
         if hovered {
             ui.painter().rect_stroke(
@@ -113,6 +110,14 @@ impl App {
         if scroll_to_me {
             resp.scroll_to_me(Some(egui::Align::Center));
         }
+
+        let label = entry.file_name().unwrap().to_string_lossy();
+        ui.add(Label::new(
+            RichText::new(label)
+                .size(grid.label_size)
+                .color(Color32::GRAY)
+                .strong(),
+        ));
     }
 
     fn draw_grid(&mut self, ui: &mut Ui) {
