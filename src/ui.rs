@@ -34,34 +34,34 @@ struct GridLayout {
     cols: usize,
     rows: usize,
     size: Vec2, // x: cols y: rows
-    cell_size: Vec2,
-    label_height: f32,
+    img_size: Vec2,
+    label_size: f32,
 }
 
 impl GridLayout {
-    fn new(ui: &Ui, cells: usize) -> GridLayout {
-        let cells = cells.min(MAX_COLS * MAX_ROWS);
+    fn new(ui: &Ui, max_cols: usize, max_rows: usize, cells: usize) -> GridLayout {
+        let cells = cells.min(max_cols * max_rows);
         if cells == 0 {
             return GridLayout::default();
         }
         let spacing = ui.spacing().item_spacing;
-        let cols = cells.min(MAX_COLS); // prioritize laying out columns
+        let cols = cells.min(max_cols); // prioritize laying out columns
         let rows = cells.div_ceil(cols);
         let size = Vec2::new(cols as f32, rows as f32);
         let available = ui.available_size();
-        let label_height = ui.text_style_height(&egui::TextStyle::Body);
+        let label_size = ui.text_style_height(&egui::TextStyle::Body);
         // window_margin is a smidgeon too much, ui.spacing().item_spacing.y is too little
-        let label_size = label_height + ui.style().spacing.window_margin.bottom as f32 - 1.;
-        let mut raw_cell_size = spacing * size.sub(Vec2::ONE);
-        raw_cell_size.y += label_size * size.y;
-        let cell_size = ((available - raw_cell_size) / size).max(Vec2::ZERO);
+        let label_tot = label_size + ui.style().spacing.window_margin.bottom as f32 - 1.;
+        let mut cell_size = spacing * size.sub(Vec2::ONE);
+        cell_size.y += label_tot * size.y;
+        let img_size = ((available - cell_size) / size).max(Vec2::ZERO);
 
         GridLayout {
             cols,
             rows,
             size,
-            cell_size,
-            label_height,
+            img_size,
+            label_size,
         }
     }
 }
@@ -81,7 +81,7 @@ impl App {
         hovered: bool,
         scroll_to_me: bool,
     ) {
-        ui.set_width(grid.cell_size.x);
+        ui.set_width(grid.img_size.x);
 
         let hover_text = thumb
             .parent()
@@ -90,13 +90,13 @@ impl App {
             .unwrap()
             .to_string_lossy();
         let resp = self
-            .draw_image(ui, thumb, grid.cell_size)
+            .draw_image(ui, thumb, grid.img_size)
             .on_hover_text_at_pointer(hover_text);
 
         let label = entry.file_name().unwrap().to_string_lossy();
         ui.add(Label::new(
             RichText::new(label)
-                .size(grid.label_height)
+                .size(grid.label_size)
                 .color(Color32::GRAY)
                 .strong(),
         ));
@@ -116,7 +116,7 @@ impl App {
     }
 
     fn draw_grid(&mut self, ui: &mut Ui) {
-        let grid = GridLayout::new(ui, self.curr_entries.len());
+        let grid = GridLayout::new(ui, MAX_COLS, MAX_ROWS, self.curr_entries.len());
 
         self.grid_size = grid.size;
         let mut prev_entry = self.prev_entry;
@@ -152,8 +152,16 @@ impl App {
     }
 
     fn draw_files(&mut self, ui: &mut Ui) {
-        ui.centered_and_justified(|ui| {
-            self.draw_image(ui, self.curr_entry().unwrap(), ui.available_size());
+        let num_entries = self.curr_entries.len();
+        let grid = GridLayout::new(ui, 1, 1, 1);
+        ui.vertical_centered(|ui| {
+            self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
+            ui.add(Label::new(
+                RichText::new(format!("{} of {num_entries}", self.curr_entry + 1))
+                    .size(grid.label_size)
+                    .color(Color32::GRAY)
+                    .strong(),
+            ));
         });
     }
 
