@@ -1,6 +1,7 @@
 mod app;
 mod common;
 mod ui;
+mod logging;
 
 use crate::app::*;
 

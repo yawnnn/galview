@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{common::*, ui::UiExt};
+use crate::{common::*, logging::*, ui::UiExt};
 
 /// compare strings with awareness of number substrings
 fn smart_str_cmp(a: &str, b: &str) -> cmp::Ordering {
