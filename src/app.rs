@@ -177,7 +177,7 @@ impl App {
         self.entries.get(idx)
     }
 
-    pub fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
+    fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.res_dir.join(name)
     }
 
@@ -191,7 +191,7 @@ impl App {
         }
     }
 
-    pub fn set_pics_dir(
+    fn set_pics_dir(
         &mut self,
         ctx: &egui::Context,
         dir: PathBuf,
@@ -208,7 +208,7 @@ impl App {
         self.entry_idx = 0;
     }
 
-    pub fn set_mode(&mut self, ctx: &egui::Context, mode: Mode) {
+    fn set_mode(&mut self, ctx: &egui::Context, mode: Mode) {
         if self.mode == mode {
             return;
         }
@@ -221,7 +221,7 @@ impl App {
         self.mode = mode;
     }
 
-    pub fn nav_forward(&mut self, ctx: &egui::Context, target: &Path) {
+    fn nav_forward(&mut self, ctx: &egui::Context, target: &Path) {
         if target.is_dir() {
             let mut dir = target.to_owned();
             let entries = nav_towards(&mut dir, Direction::Down);
@@ -242,14 +242,20 @@ impl App {
         }
     }
 
-    pub fn nav_backward(&mut self, ctx: &egui::Context) {
+    fn nav_backward(&mut self, ctx: &egui::Context) {
         let mut dir = self.dir.parent().unwrap().to_owned();
         let entries = nav_towards(&mut dir, Direction::Up);
         self.set_mode(ctx, Mode::Dirs);
         self.set_pics_dir(ctx, dir, entries);
     }
 
-    pub fn nav_entry(&mut self, dir_x: isize, dir_y: isize) {
+    fn nav_enter(&mut self, ui: &mut egui::Ui) {
+        if let Some(entry) = self.curr_entry() {
+            self.nav_forward(ui, &entry.clone());
+        }
+    }
+
+    fn cursor_shift(&mut self, dir_x: isize, dir_y: isize) {
         if self.entries.is_empty() {
             return;
         };
@@ -268,19 +274,15 @@ impl App {
         };
     }
 
-    fn nav_enter(&mut self, ui: &mut egui::Ui) {
-        if let Some(entry) = self.curr_entry() {
-            self.nav_forward(ui, &entry.clone());
-        }
-    }
-
-    pub fn handle_input(&mut self, ui: &mut egui::Ui) {
+    fn handle_input(&mut self, ui: &mut egui::Ui) {
         for key in ui.keys_pressed() {
             match key {
-                Key::ArrowLeft => self.nav_entry(-1, 0),
-                Key::ArrowRight => self.nav_entry(1, 0),
-                Key::ArrowUp => self.nav_entry(0, -1),
-                Key::ArrowDown => self.nav_entry(0, 1),
+                Key::ArrowLeft => self.cursor_shift(-1, 0),
+                Key::ArrowRight => self.cursor_shift(1, 0),
+                Key::ArrowUp => self.cursor_shift(0, -1),
+                Key::ArrowDown => self.cursor_shift(0, 1),
+                Key::Home => self.entry_idx = 0,
+                Key::End => self.entry_idx = self.entries.len()-1,
                 Key::Enter => self.nav_enter(ui),
                 Key::Backspace | Key::Escape => self.nav_backward(ui),
                 Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
