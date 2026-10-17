@@ -2,6 +2,7 @@ use core::str;
 use std::{
     cmp, iter,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 pub trait NumExt {
@@ -104,6 +105,17 @@ pub fn read_dir(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
 /// read dir entries and sort them
 pub fn dir_entries_sorted(dir: &Path) -> Vec<PathBuf> {
     let mut entries: Vec<_> = read_dir(dir).collect();
+    entries.sort_by(|a, b| {
+        let a = a.file_name().unwrap().to_string_lossy();
+        let b = b.file_name().unwrap().to_string_lossy();
+        natural_cmp(&a, &b)
+    });
+    entries
+}
+
+/// read dir entries and sort them
+pub fn dir_entries_sorted_rc(dir: &Path) -> Vec<Rc<PathBuf>> {
+    let mut entries: Vec<_> = read_dir(dir).map(Rc::new).collect();
     entries.sort_by(|a, b| {
         let a = a.file_name().unwrap().to_string_lossy();
         let b = b.file_name().unwrap().to_string_lossy();

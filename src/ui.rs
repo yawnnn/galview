@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::{
-    CentralPanel, Color32, Event, Image, Key, Label, Response, RichText,
+    CentralPanel, Color32, Event, Image, Key, Label, Panel, Response, RichText,
     ScrollArea, Ui, Vec2,
 };
 use std::{ops::Sub, path::Path};
@@ -141,12 +141,11 @@ impl App {
                 for (i, entry) in self.entries.iter().enumerate() {
                     ui.vertical_centered(|ui| {
                         let thumb = self.find_thumbnail(entry);
-                        let hovered = self.entry_idx == i;
+                        let hovered = self.cursor == i;
                         // calling scroll_to_me every time, causes a weird glitch
-                        let scroll_to_me =
-                            hovered && self.entry_idx != prev_entry;
+                        let scroll_to_me = hovered && self.cursor != prev_entry;
                         if scroll_to_me {
-                            prev_entry = self.entry_idx;
+                            prev_entry = self.cursor;
                         }
                         self.draw_entry(
                             ui,
@@ -182,20 +181,17 @@ impl App {
             available_size = ui.available_size();
             self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
             ui.add(Label::new(
-                RichText::new(format!(
-                    "{} of {num_entries}",
-                    self.entry_idx + 1
-                ))
-                .size(grid.label_size)
-                .color(Color32::GRAY)
-                .strong(),
+                RichText::new(format!("{} of {num_entries}", self.cursor + 1))
+                    .size(grid.label_size)
+                    .color(Color32::GRAY)
+                    .strong(),
             ));
         });
 
         // preload neighboring entries, forget the others
         for (i, p) in self.entries.iter().enumerate() {
             let uri = p.to_uri();
-            match self.entry_idx.abs_diff(i) {
+            match self.cursor.abs_diff(i) {
                 1..=3 => {
                     let _ = Image::from_uri(uri)
                         .fit_to_exact_size(grid.size)
@@ -207,7 +203,34 @@ impl App {
         }
     }
 
+    fn draw_filter(&mut self, ui: &mut Ui) {
+        let mut text = self.get_filter();
+
+        Panel::bottom("filter").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("filter")
+                        .text_style(egui::TextStyle::Heading),
+                );
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut text)
+                        .desired_width(f32::INFINITY),
+                );
+
+                response.request_focus();
+
+                if response.changed() {
+                    self.update_filter(text);
+                }
+            });
+        });
+    }
+
     pub fn draw(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        if self.filter_on {
+            self.draw_filter(ui);
+        }
+
         CentralPanel::default().show(ui, |ui| {
             match self.mode {
                 Mode::Dirs => self.draw_dirs(ui),

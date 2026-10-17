@@ -3,6 +3,7 @@ use std::{
     borrow::Cow,
     env, mem,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use crate::{common::*, logging::*, ui::UiExt};
@@ -12,7 +13,10 @@ enum Direction {
     Down,
 }
 
-fn nav_towards(target_dir: &mut PathBuf, direction: Direction) -> Vec<PathBuf> {
+fn nav_towards(
+    target_dir: &mut PathBuf,
+    direction: Direction,
+) -> Vec<Rc<PathBuf>> {
     let mut dir = Cow::from(target_dir.as_path());
 
     loop {
@@ -31,7 +35,7 @@ fn nav_towards(target_dir: &mut PathBuf, direction: Direction) -> Vec<PathBuf> {
 
     *target_dir = dir.to_path_buf();
 
-    dir_entries_sorted(target_dir)
+    dir_entries_sorted_rc(target_dir)
 }
 
 pub fn find_folder_thumbnail(folder: &Path) -> Option<PathBuf> {
@@ -58,16 +62,16 @@ pub struct App {
     pub res_dir: PathBuf,
     pub window_size: Vec2,
 
-    // UI state
     pub mode: Mode,
     pub dir: PathBuf,
-    pub entries: Vec<PathBuf>,
-    pub entry_idx: usize,
-
-    // UI cache
+    raw_entries: Vec<Rc<PathBuf>>,
+    pub entries: Vec<Rc<PathBuf>>,
+    pub cursor: usize,
     pub dim_x: usize,
     pub dim_y: usize,
     pub prev_entry: usize,
+    pub filter_on: bool,
+    filter_text: String,
 }
 
 impl App {
@@ -78,29 +82,57 @@ impl App {
         );
         let res_dir = manifest_dir.join("resources");
         let dir = home.join("Pictures");
-        let entries = dir_entries_sorted(&dir);
+        let raw_entries = dir_entries_sorted_rc(&dir);
+        let entries = raw_entries.clone();
         App {
             res_dir,
             dir,
+            raw_entries,
             entries,
             prev_entry: usize::MAX,
             ..Default::default()
         }
     }
 
-    pub fn curr_entry(&self) -> Option<&PathBuf> {
-        self.entries.get(self.entry_idx)
+    fn has_filter(&self) -> bool {
+        self.mode == Mode::Dirs && !self.filter_text.is_empty()
     }
 
-    //pub fn entry(&self, idx: usize) -> Option<&PathBuf> {
-    //    self.entries.get(idx)
-    //}
+    fn passes_filter(&self, e: &Path) -> bool {
+        e.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_lowercase()
+            .contains(&self.filter_text)
+    }
+
+    pub fn update_entries(&mut self) {
+        self.entries = if self.has_filter() {
+            self.raw_entries
+                .iter()
+                .filter(|e| self.passes_filter(e))
+                .cloned()
+                .collect()
+        } else {
+            self.raw_entries.clone()
+        };
+
+        self.cursor = 0;
+    }
+
+    pub fn entry(&self, idx: usize) -> Option<&PathBuf> {
+        self.entries.get(idx).map(|e| e.as_ref())
+    }
+
+    pub fn curr_entry(&self) -> Option<&PathBuf> {
+        self.entry(self.cursor)
+    }
 
     fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.res_dir.join(name)
     }
 
-    pub fn find_thumbnail<'a>(&self, entry: &'a Path) -> Cow<'a, Path> {
+    pub fn find_thumbnail<'p>(&self, entry: &'p Path) -> Cow<'p, Path> {
         if entry.is_file() {
             Cow::from(entry)
         } else if let Some(p) = find_folder_thumbnail(entry) {
@@ -114,17 +146,16 @@ impl App {
         &mut self,
         ctx: &egui::Context,
         dir: PathBuf,
-        entries: Vec<PathBuf>,
+        entries: Vec<Rc<PathBuf>>,
     ) {
-        // // forget old images
-        // for e in &self.curr_entries {
-        //     ctx.forget_image(&self.find_thumbnail(Cow::from(e)).to_uri());
-        // }
+        if self.dir == dir {
+            return;
+        }
         ctx.forget_all_images();
         ctx.request_repaint();
         self.dir = dir;
-        self.entries = entries;
-        self.entry_idx = 0;
+        self.raw_entries = entries;
+        self.update_entries();
     }
 
     fn set_mode(&mut self, ctx: &egui::Context, mode: Mode) {
@@ -179,33 +210,69 @@ impl App {
             return;
         };
 
-        self.entry_idx = match self.mode {
+        self.cursor = match self.mode {
             Mode::Dirs => self
-                .entry_idx
+                .cursor
                 .saturating_add_on(dir_x, self.entries.len() - 1)
                 .saturating_add_on_or_stay(
                     dir_y * self.dim_x as isize,
                     self.entries.len() - 1,
                 ),
             Mode::Files => {
-                self.entry_idx.wrapping_add_on(dir_x, self.entries.len())
+                self.cursor.wrapping_add_on(dir_x, self.entries.len())
             }
         };
     }
 
+    fn open_filter(&mut self) {
+        if self.mode == Mode::Files {
+            return;
+        }
+        self.filter_on = true;
+    }
+
+    pub fn get_filter(&self) -> String {
+        self.filter_text.clone()
+    }
+
+    pub fn update_filter(&mut self, text: String) {
+        self.filter_text = text.to_lowercase();
+        self.update_entries();
+    }
+
+    fn handle_key_filter(&mut self, _ui: &mut egui::Ui, key: Key) {
+        match key {
+            Key::Enter => self.filter_on = false,
+            Key::Escape => {
+                self.filter_on = false;
+                self.update_filter(String::new());
+            }
+            _ => (),
+        }
+    }
+
+    fn handle_key(&mut self, ui: &mut egui::Ui, key: Key) {
+        match key {
+            Key::ArrowLeft => self.cursor_shift(-1, 0),
+            Key::ArrowRight => self.cursor_shift(1, 0),
+            Key::ArrowUp => self.cursor_shift(0, -1),
+            Key::ArrowDown => self.cursor_shift(0, 1),
+            Key::Home => self.cursor = 0,
+            Key::End => self.cursor = self.entries.len() - 1,
+            Key::Enter => self.nav_enter(ui),
+            Key::Backspace | Key::Escape => self.nav_backward(ui),
+            Key::Slash => self.open_filter(),
+            Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
+            _ => (),
+        }
+    }
+
     fn handle_input(&mut self, ui: &mut egui::Ui) {
         for key in ui.keys_pressed() {
-            match key {
-                Key::ArrowLeft => self.cursor_shift(-1, 0),
-                Key::ArrowRight => self.cursor_shift(1, 0),
-                Key::ArrowUp => self.cursor_shift(0, -1),
-                Key::ArrowDown => self.cursor_shift(0, 1),
-                Key::Home => self.entry_idx = 0,
-                Key::End => self.entry_idx = self.entries.len() - 1,
-                Key::Enter => self.nav_enter(ui),
-                Key::Backspace | Key::Escape => self.nav_backward(ui),
-                Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
-                _ => (),
+            if self.filter_on {
+                self.handle_key_filter(ui, key);
+            } else {
+                self.handle_key(ui, key);
             }
         }
     }
