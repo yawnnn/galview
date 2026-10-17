@@ -69,9 +69,10 @@ pub struct App {
     pub cursor: usize,
     pub dim_x: usize,
     pub dim_y: usize,
-    pub prev_entry: usize,
     pub filter_on: bool,
     filter_text: String,
+    pub prev_frame_cursor: usize,
+    nav_stack: Vec<PathBuf>,
 }
 
 impl App {
@@ -89,7 +90,7 @@ impl App {
             dir,
             raw_entries,
             entries,
-            prev_entry: usize::MAX,
+            prev_frame_cursor: usize::MAX,
             ..Default::default()
         }
     }
@@ -142,17 +143,10 @@ impl App {
         }
     }
 
-    fn set_pics_dir(
-        &mut self,
-        ctx: &egui::Context,
-        dir: PathBuf,
-        entries: Vec<Rc<PathBuf>>,
-    ) {
+    fn set_pics_dir(&mut self, dir: PathBuf, entries: Vec<Rc<PathBuf>>) {
         if self.dir == dir {
             return;
         }
-        ctx.forget_all_images();
-        ctx.request_repaint();
         self.dir = dir;
         self.raw_entries = entries;
         self.update_entries();
@@ -172,6 +166,10 @@ impl App {
     }
 
     fn nav_forward(&mut self, ctx: &egui::Context, target: &Path) {
+        if let Some(e) = self.curr_entry().cloned() {
+            self.nav_stack.push(e);
+        }
+
         if target.is_dir() {
             let mut dir = target.to_owned();
             let entries = nav_towards(&mut dir, Direction::Down);
@@ -184,7 +182,7 @@ impl App {
                     Mode::Dirs
                 };
             self.set_mode(ctx, new_mode);
-            self.set_pics_dir(ctx, dir, entries);
+            self.set_pics_dir(dir, entries);
         } else if target.is_file() {
             self.set_mode(ctx, Mode::Files);
         } else {
@@ -196,7 +194,16 @@ impl App {
         let mut dir = self.dir.parent().unwrap().to_owned();
         let entries = nav_towards(&mut dir, Direction::Up);
         self.set_mode(ctx, Mode::Dirs);
-        self.set_pics_dir(ctx, dir, entries);
+        self.set_pics_dir(dir, entries);
+
+        if let Some(e) = self.nav_stack.pop()
+            && let Some(pos) = self
+                .entries
+                .iter()
+                .position(|e2| e2.as_path() == e.as_path())
+        {
+            self.cursor = pos;
+        }
     }
 
     fn nav_enter(&mut self, ui: &mut egui::Ui) {

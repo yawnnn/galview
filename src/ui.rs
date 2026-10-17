@@ -133,7 +133,7 @@ impl App {
 
         self.dim_x = grid.size.x as usize;
         self.dim_y = grid.size.y as usize;
-        let mut prev_entry = self.prev_entry;
+        let mut prev_entry = self.prev_frame_cursor;
 
         egui::Grid::new("thumb_grid")
             .num_columns(grid.cols)
@@ -163,7 +163,7 @@ impl App {
                 }
             });
 
-        self.prev_entry = prev_entry;
+        self.prev_frame_cursor = prev_entry;
     }
 
     fn draw_dirs(&mut self, ui: &mut Ui) {
