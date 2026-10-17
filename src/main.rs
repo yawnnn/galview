@@ -1,9 +1,9 @@
 mod app;
 mod common;
-mod ui;
 mod logging;
+mod ui;
 
-use crate::app::*;
+use crate::{app::*, common::*};
 
 fn main() -> eframe::Result {
     env_logger::init();

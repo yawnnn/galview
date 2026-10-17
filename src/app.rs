@@ -1,92 +1,11 @@
-use core::str;
 use egui::{Key, Vec2};
-
 use std::{
     borrow::Cow,
-    cmp, env, iter, mem,
+    env, mem,
     path::{Path, PathBuf},
 };
 
 use crate::{common::*, logging::*, ui::UiExt};
-
-use egui_extras::loaders::webp_loader;
-
-pub fn enable_animations(ctx: &egui::Context) {
-    if !ctx.is_loader_installed(webp_loader::WebPLoader::ID) {
-        let webp_loader = webp_loader::WebPLoader::default();
-        ctx.add_image_loader(std::sync::Arc::new(webp_loader));
-    }
-}
-
-pub fn disable_animations(ctx: &egui::Context) {
-    let loaders = ctx.loaders();
-    let mut img_loaders = loaders.image.lock();
-    if let Some(pos) = img_loaders
-        .iter()
-        .position(|loader| loader.id() == webp_loader::WebPLoader::ID)
-    {
-        img_loaders.remove(pos);
-    }
-}
-
-/// compare strings with awareness of number substrings
-fn natural_cmp(a: &str, b: &str) -> cmp::Ordering {
-    fn take_number(chars: &mut iter::Peekable<str::Chars>) -> u64 {
-        let mut n: u64 = 0;
-        while let Some(&c) = chars.peek()
-            && c.is_ascii_digit()
-        {
-            n = n.saturating_mul(10).saturating_add(c as u64 - '0' as u64);
-            chars.next();
-        }
-        n
-    }
-
-    let mut a_chars = a.chars().peekable();
-    let mut b_chars = b.chars().peekable();
-
-    loop {
-        match (a_chars.peek(), b_chars.peek()) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, Some(_)) => return cmp::Ordering::Less,
-            (Some(_), None) => return cmp::Ordering::Greater,
-            (Some(ac), Some(bc))
-                if ac.is_ascii_digit() && bc.is_ascii_digit() =>
-            {
-                let a_num = take_number(&mut a_chars);
-                let b_num = take_number(&mut b_chars);
-                match a_num.cmp(&b_num) {
-                    cmp::Ordering::Equal => continue,
-                    ord => return ord,
-                }
-            }
-            (Some(ac), Some(bc)) => match ac.cmp(bc) {
-                cmp::Ordering::Equal => {
-                    a_chars.next();
-                    b_chars.next();
-                }
-                ord => return ord,
-            },
-        }
-    }
-}
-
-fn read_dir(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
-    dir.read_dir()
-        .unwrap_or_else(|e| panic!("{:?}: {e}", dir))
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-}
-
-fn read_dir_sorted(dir: &Path) -> Vec<PathBuf> {
-    let mut entries: Vec<_> = read_dir(dir).collect();
-    entries.sort_by(|a, b| {
-        let a = a.file_name().unwrap().to_string_lossy();
-        let b = b.file_name().unwrap().to_string_lossy();
-        natural_cmp(&a, &b)
-    });
-    entries
-}
 
 enum Direction {
     Up,
@@ -112,11 +31,11 @@ fn nav_towards(target_dir: &mut PathBuf, direction: Direction) -> Vec<PathBuf> {
 
     *target_dir = dir.to_path_buf();
 
-    read_dir_sorted(target_dir)
+    dir_entries_sorted(target_dir)
 }
 
 pub fn find_folder_thumbnail(folder: &Path) -> Option<PathBuf> {
-    let mut entries = read_dir_sorted(folder);
+    let mut entries = dir_entries_sorted(folder);
     if let Some(e) = entries.iter_mut().find(|e| e.is_file()) {
         return Some(mem::take(e));
     }
@@ -159,7 +78,7 @@ impl App {
         );
         let res_dir = manifest_dir.join("resources");
         let dir = home.join("Pictures");
-        let entries = read_dir_sorted(&dir);
+        let entries = dir_entries_sorted(&dir);
         App {
             res_dir,
             dir,
@@ -173,9 +92,9 @@ impl App {
         self.entries.get(self.entry_idx)
     }
 
-    pub fn entry(&self, idx: usize) -> Option<&PathBuf> {
-        self.entries.get(idx)
-    }
+    //pub fn entry(&self, idx: usize) -> Option<&PathBuf> {
+    //    self.entries.get(idx)
+    //}
 
     fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.res_dir.join(name)
@@ -266,7 +185,7 @@ impl App {
                 .saturating_add_on(dir_x, self.entries.len() - 1)
                 .saturating_add_on_or_stay(
                     dir_y * self.dim_x as isize,
-                    self.entries.len() - 1
+                    self.entries.len() - 1,
                 ),
             Mode::Files => {
                 self.entry_idx.wrapping_add_on(dir_x, self.entries.len())
@@ -282,7 +201,7 @@ impl App {
                 Key::ArrowUp => self.cursor_shift(0, -1),
                 Key::ArrowDown => self.cursor_shift(0, 1),
                 Key::Home => self.entry_idx = 0,
-                Key::End => self.entry_idx = self.entries.len()-1,
+                Key::End => self.entry_idx = self.entries.len() - 1,
                 Key::Enter => self.nav_enter(ui),
                 Key::Backspace | Key::Escape => self.nav_backward(ui),
                 Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),

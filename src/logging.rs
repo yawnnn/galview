@@ -47,7 +47,11 @@ thread_local! {
     static RAN_X_FRAME: RefCell<HashMap<SrcPosition, u64>> = RefCell::default();
 }
 
-pub fn run_one_frame(src_pos: SrcPosition, not_first: bool, inner: impl FnOnce()) {
+pub fn run_one_frame(
+    src_pos: SrcPosition,
+    not_first: bool,
+    inner: impl FnOnce(),
+) {
     let frame_count = frame_count();
     if not_first && frame_count <= 1 {
         return;
