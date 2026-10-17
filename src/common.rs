@@ -3,17 +3,33 @@
 use std::path::Path;
 
 pub trait NumExt {
-    fn modulo_add(self, rhs: Self, modulo: Self) -> Self;
-    fn modulo_sub(self, rhs: Self, modulo: Self) -> Self;
+    type Signed;
+    fn saturating_add_on(self, rhs: Self::Signed, on: Self) -> Self;
+    fn saturating_add_on_or_stay(self, rhs: Self::Signed, on: Self) -> Self;
+    fn wrapping_add_on(self, rhs: Self::Signed, on: Self) -> Self;
 }
 
 impl NumExt for usize {
-    fn modulo_add(self, rhs: Self, modulo: Self) -> Self {
-        (self + rhs).rem_euclid(modulo)
+    type Signed = isize;
+
+    fn saturating_add_on(self, rhs: Self::Signed, on: Self) -> Self {
+        match self as Self::Signed + rhs {
+            ..0 => 0,
+            res if res as Self > on => on,
+            res => res as Self,
+        }
     }
 
-    fn modulo_sub(self, rhs: Self, modulo: Self) -> Self {
-        (self as isize - rhs as isize).rem_euclid(modulo as isize) as usize
+    fn saturating_add_on_or_stay(self, rhs: Self::Signed, on: Self) -> Self {
+        match self as Self::Signed + rhs {
+            ..0 => self,
+            res if res as Self > on => self,
+            res => res as Self,
+        }
+    }
+
+    fn wrapping_add_on(self, rhs: Self::Signed, on: Self) -> Self {
+        (self as Self::Signed + rhs).rem_euclid(on as isize) as usize
     }
 }
 

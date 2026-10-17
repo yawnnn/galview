@@ -1,6 +1,7 @@
 use eframe::egui;
 use egui::{
-    CentralPanel, Color32, Event, Image, Key, Label, Response, RichText, ScrollArea, Ui, Vec2,
+    CentralPanel, Color32, Event, Image, Key, Label, Response, RichText,
+    ScrollArea, Ui, Vec2,
 };
 use std::{ops::Sub, path::Path};
 
@@ -39,7 +40,12 @@ struct GridLayout {
 }
 
 impl GridLayout {
-    fn new(ui: &Ui, max_cols: usize, max_rows: usize, cells: usize) -> GridLayout {
+    fn new(
+        ui: &Ui,
+        max_cols: usize,
+        max_rows: usize,
+        cells: usize,
+    ) -> GridLayout {
         let cells = cells.min(max_cols * max_rows);
         if cells == 0 {
             return GridLayout::default();
@@ -51,7 +57,8 @@ impl GridLayout {
         let available = ui.available_size();
         let label_size = ui.text_style_height(&egui::TextStyle::Body);
         // window_margin is a smidgeon too much, ui.spacing().item_spacing.y is too little
-        let label_tot = label_size + ui.style().spacing.window_margin.bottom as f32 - 1.;
+        let label_tot =
+            label_size + ui.style().spacing.window_margin.bottom as f32 - 1.;
         let mut cell_size = spacing * size.sub(Vec2::ONE);
         cell_size.y += label_tot * size.y;
         let img_size = ((available - cell_size) / size).max(Vec2::ZERO);
@@ -83,7 +90,8 @@ impl App {
     ) {
         ui.set_width(grid.img_size.x);
 
-        let img_rect = egui::Rect::from_min_size(ui.cursor().min, grid.img_size);
+        let img_rect =
+            egui::Rect::from_min_size(ui.cursor().min, grid.img_size);
         let resp = if ui.is_rect_visible(img_rect) {
             self.draw_image(ui, thumb, grid.img_size)
         } else {
@@ -123,7 +131,8 @@ impl App {
     fn draw_grid(&mut self, ui: &mut Ui) {
         let grid = GridLayout::new(ui, MAX_COLS, MAX_ROWS, self.entries.len());
 
-        self.grid_size = grid.size;
+        self.dim_x = grid.size.x as usize;
+        self.dim_y = grid.size.y as usize;
         let mut prev_entry = self.prev_entry;
 
         egui::Grid::new("thumb_grid")
@@ -134,11 +143,19 @@ impl App {
                         let thumb = self.find_thumbnail(entry);
                         let hovered = self.entry_idx == i;
                         // calling scroll_to_me every time, causes a weird glitch
-                        let scroll_to_me = hovered && self.entry_idx != prev_entry;
+                        let scroll_to_me =
+                            hovered && self.entry_idx != prev_entry;
                         if scroll_to_me {
                             prev_entry = self.entry_idx;
                         }
-                        self.draw_entry(ui, entry, &thumb, &grid, hovered, scroll_to_me);
+                        self.draw_entry(
+                            ui,
+                            entry,
+                            &thumb,
+                            &grid,
+                            hovered,
+                            scroll_to_me,
+                        );
                     });
 
                     if (i + 1) % grid.cols == 0 {
@@ -162,10 +179,13 @@ impl App {
         ui.vertical_centered(|ui| {
             self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
             ui.add(Label::new(
-                RichText::new(format!("{} of {num_entries}", self.entry_idx + 1))
-                    .size(grid.label_size)
-                    .color(Color32::GRAY)
-                    .strong(),
+                RichText::new(format!(
+                    "{} of {num_entries}",
+                    self.entry_idx + 1
+                ))
+                .size(grid.label_size)
+                .color(Color32::GRAY)
+                .strong(),
             ));
         });
     }

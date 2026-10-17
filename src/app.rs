@@ -146,7 +146,8 @@ pub struct App {
     pub entry_idx: usize,
 
     // UI cache
-    pub grid_size: Vec2,
+    pub dim_x: usize,
+    pub dim_y: usize,
     pub prev_entry: usize,
 }
 
@@ -248,48 +249,39 @@ impl App {
         self.set_pics_dir(ctx, dir, entries);
     }
 
-    pub fn move_cursor(&mut self, key: &Key) {
-        let Some(original) = self.curr_entry() else {
+    pub fn nav_entry(&mut self, dir_x: isize, dir_y: isize) {
+        if self.entries.is_empty() {
             return;
         };
 
-        let max = self.entries.len();
-        let grid_size = self.grid_size;
-        let mut entry_idx = self.entry_idx;
-        loop {
-            entry_idx = match key {
-                Key::ArrowLeft => entry_idx.modulo_sub(1, max),
-                Key::ArrowRight => entry_idx.modulo_add(1, max),
-                Key::ArrowUp => entry_idx.modulo_sub(grid_size.x as usize, max),
-                Key::ArrowDown => {
-                    entry_idx.modulo_add(grid_size.x as usize, max)
-                }
-                _ => unreachable!(),
-            };
-
-            let new_curr = self.entry(entry_idx).unwrap();
-            // if in Files mode, loop around
-            if self.mode == Mode::Dirs
-                || new_curr.is_file()
-                || new_curr == original
-            {
-                break;
+        self.entry_idx = match self.mode {
+            Mode::Dirs => self
+                .entry_idx
+                .saturating_add_on(dir_x, self.entries.len() - 1)
+                .saturating_add_on_or_stay(
+                    dir_y * self.dim_x as isize,
+                    self.entries.len() - 1
+                ),
+            Mode::Files => {
+                self.entry_idx.wrapping_add_on(dir_x, self.entries.len())
             }
-        }
+        };
+    }
 
-        self.entry_idx = entry_idx;
+    fn nav_enter(&mut self, ui: &mut egui::Ui) {
+        if let Some(entry) = self.curr_entry() {
+            self.nav_forward(ui, &entry.clone());
+        }
     }
 
     pub fn handle_input(&mut self, ui: &mut egui::Ui) {
         for key in ui.keys_pressed() {
             match key {
-                Key::ArrowLeft
-                | Key::ArrowRight
-                | Key::ArrowUp
-                | Key::ArrowDown => self.move_cursor(&key),
-                Key::Enter if let Some(entry) = self.curr_entry() => {
-                    self.nav_forward(ui, &entry.clone());
-                }
+                Key::ArrowLeft => self.nav_entry(-1, 0),
+                Key::ArrowRight => self.nav_entry(1, 0),
+                Key::ArrowUp => self.nav_entry(0, -1),
+                Key::ArrowDown => self.nav_entry(0, 1),
+                Key::Enter => self.nav_enter(ui),
                 Key::Backspace | Key::Escape => self.nav_backward(ui),
                 Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
                 _ => (),
