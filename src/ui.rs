@@ -176,7 +176,10 @@ impl App {
     fn draw_files(&mut self, ui: &mut Ui) {
         let num_entries = self.entries.len();
         let grid = GridLayout::new(ui, 1, 1, 1);
+        let mut available_size = Vec2::ZERO;
+
         ui.vertical_centered(|ui| {
+            available_size = ui.available_size();
             self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
             ui.add(Label::new(
                 RichText::new(format!(
@@ -188,6 +191,20 @@ impl App {
                 .strong(),
             ));
         });
+
+        // preload neighboring entries, forget the others
+        for (i, p) in self.entries.iter().enumerate() {
+            let uri = p.to_uri();
+            match self.entry_idx.abs_diff(i) {
+                1..=3 => {
+                    let _ = Image::from_uri(uri)
+                        .fit_to_exact_size(grid.size)
+                        .load_for_size(ui.ctx(), available_size);
+                }
+                4.. => ui.forget_image(&uri),
+                _ => (),
+            }
+        }
     }
 
     pub fn draw(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
