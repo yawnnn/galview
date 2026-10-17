@@ -121,7 +121,7 @@ impl App {
     }
 
     fn draw_grid(&mut self, ui: &mut Ui) {
-        let grid = GridLayout::new(ui, MAX_COLS, MAX_ROWS, self.curr_entries.len());
+        let grid = GridLayout::new(ui, MAX_COLS, MAX_ROWS, self.entries.len());
 
         self.grid_size = grid.size;
         let mut prev_entry = self.prev_entry;
@@ -129,14 +129,14 @@ impl App {
         egui::Grid::new("thumb_grid")
             .num_columns(grid.cols)
             .show(ui, |ui| {
-                for (i, entry) in self.curr_entries.iter().enumerate() {
+                for (i, entry) in self.entries.iter().enumerate() {
                     ui.vertical_centered(|ui| {
                         let thumb = self.find_thumbnail(entry);
-                        let hovered = self.curr_entry == i;
+                        let hovered = self.entry_idx == i;
                         // calling scroll_to_me every time, causes a weird glitch
-                        let scroll_to_me = hovered && self.curr_entry != prev_entry;
+                        let scroll_to_me = hovered && self.entry_idx != prev_entry;
                         if scroll_to_me {
-                            prev_entry = self.curr_entry;
+                            prev_entry = self.entry_idx;
                         }
                         self.draw_entry(ui, entry, &thumb, &grid, hovered, scroll_to_me);
                     });
@@ -157,12 +157,12 @@ impl App {
     }
 
     fn draw_files(&mut self, ui: &mut Ui) {
-        let num_entries = self.curr_entries.len();
+        let num_entries = self.entries.len();
         let grid = GridLayout::new(ui, 1, 1, 1);
         ui.vertical_centered(|ui| {
             self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
             ui.add(Label::new(
-                RichText::new(format!("{} of {num_entries}", self.curr_entry + 1))
+                RichText::new(format!("{} of {num_entries}", self.entry_idx + 1))
                     .size(grid.label_size)
                     .color(Color32::GRAY)
                     .strong(),
