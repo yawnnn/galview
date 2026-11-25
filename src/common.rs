@@ -1,6 +1,7 @@
 use core::str;
 use std::{
-    cmp, iter,
+    cmp::{self, Ordering},
+    iter,
     path::{Path, PathBuf},
     rc::Rc,
 };
@@ -52,46 +53,113 @@ impl PathExt for Path {
     }
 }
 
-/// compare strings with awareness of number substrings
-fn natural_cmp(a: &str, b: &str) -> cmp::Ordering {
-    fn take_number(chars: &mut iter::Peekable<str::Chars>) -> u64 {
-        let mut n: u64 = 0;
-        while let Some(&c) = chars.peek()
-            && c.is_ascii_digit()
-        {
-            n = n.saturating_mul(10).saturating_add(c as u64 - '0' as u64);
-            chars.next();
-        }
-        n
+#[derive(PartialEq, Eq)]
+struct NaturalChar(char);
+
+impl From<char> for NaturalChar {
+    fn from(value: char) -> Self {
+        NaturalChar(value)
     }
+}
 
-    let mut a_chars = a.chars().peekable();
-    let mut b_chars = b.chars().peekable();
+impl PartialOrd for NaturalChar {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
-    loop {
-        match (a_chars.peek(), b_chars.peek()) {
-            (None, None) => return cmp::Ordering::Equal,
-            (None, Some(_)) => return cmp::Ordering::Less,
-            (Some(_), None) => return cmp::Ordering::Greater,
-            (Some(ac), Some(bc))
-                if ac.is_ascii_digit() && bc.is_ascii_digit() =>
-            {
-                let a_num = take_number(&mut a_chars);
-                let b_num = take_number(&mut b_chars);
-                match a_num.cmp(&b_num) {
-                    cmp::Ordering::Equal => continue,
-                    ord => return ord,
-                }
+impl Ord for NaturalChar {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let c1 = self.0;
+        let c2 = other.0;
+
+        // first special chars, then numbers, then the rest
+        // TODO: Dolphin has a special ranking among special chars
+        let mut r = c1.is_alphanumeric() as i32 - c2.is_alphanumeric() as i32;
+        if r == 0 {
+            r = c2.is_numeric() as i32 - c1.is_numeric() as i32; // NOTE: inverted
+            if r == 0 {
+                // group-by letter, then by case
+                // lowercase comes before uppercase (Dolphin does this, i follow suit)
+                return c1
+                    .to_lowercase()
+                    .cmp(c2.to_lowercase())
+                    .then(c1.cmp(&c2).reverse());
             }
-            (Some(ac), Some(bc)) => match ac.cmp(bc) {
-                cmp::Ordering::Equal => {
-                    a_chars.next();
-                    b_chars.next();
-                }
-                ord => return ord,
-            },
+        }
+
+        match r {
+            1.. => Ordering::Greater,
+            ..0 => Ordering::Less,
+            0 => Ordering::Equal,
         }
     }
+}
+
+fn natural_str(s: &str) -> impl Iterator<Item = NaturalChar> {
+    s.chars().map(NaturalChar::from)
+}
+
+fn cmp_num(s1: &str, s2: &str) -> Ordering {
+    s1.len().cmp(&s2.len()).then(s1.cmp(s2))
+}
+
+#[derive(PartialEq, Eq)]
+enum Part<'a> {
+    Num(&'a str),
+    Str(&'a str),
+}
+
+fn partition_numbers(s: &str) -> impl Iterator<Item = Part<'_>> {
+    let mut chars = s.chars().peekable();
+    let mut pos = 0;
+    iter::from_fn(move || {
+        let beg = pos;
+        let c = chars.next()?;
+        let is_num = c.is_numeric();
+        pos += c.len_utf8();
+        while let Some(c) = chars.peek().copied() {
+            if c.is_numeric() != is_num {
+                break;
+            }
+            chars.next();
+            pos += c.len_utf8();
+        }
+        let ss = &s[beg..pos];
+        let p = match is_num {
+            true => Part::Num(ss),
+            false => Part::Str(ss),
+        };
+        Some(p)
+    })
+}
+
+impl<'a> PartialOrd for Part<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for Part<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        use Part::*;
+        match (self, other) {
+            (Str(s1), Str(s2)) => natural_str(s1).cmp(natural_str(s2)),
+            (Num(s1), Num(s2)) => cmp_num(s1, s2),
+            (Str(s1), Num(s2)) => {
+                natural_str(s1).next().cmp(&natural_str(s2).next())
+            }
+            (Num(s1), Str(s2)) => {
+                natural_str(s1).next().cmp(&natural_str(s2).next())
+            }
+        }
+    }
+}
+
+/// compare strings with awareness of number substrings
+/// modeled after what Dolphin does
+fn cmp_natural(a: &str, b: &str) -> cmp::Ordering {
+    partition_numbers(a).cmp(partition_numbers(b))
 }
 
 /// read dir without complications
@@ -108,7 +176,7 @@ pub fn dir_entries_sorted(dir: &Path) -> Vec<PathBuf> {
     entries.sort_by(|a, b| {
         let a = a.file_name().unwrap().to_string_lossy();
         let b = b.file_name().unwrap().to_string_lossy();
-        natural_cmp(&a, &b)
+        cmp_natural(&a, &b)
     });
     entries
 }
@@ -119,7 +187,7 @@ pub fn dir_entries_sorted_rc(dir: &Path) -> Vec<Rc<PathBuf>> {
     entries.sort_by(|a, b| {
         let a = a.file_name().unwrap().to_string_lossy();
         let b = b.file_name().unwrap().to_string_lossy();
-        natural_cmp(&a, &b)
+        cmp_natural(&a, &b)
     });
     entries
 }
@@ -143,5 +211,23 @@ pub fn disable_animations(ctx: &egui::Context) {
         .position(|loader| loader.id() == webp_loader::WebPLoader::ID)
     {
         img_loaders.remove(pos);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cmp_natural() {
+        assert_eq!(cmp_natural("_", "1"), Ordering::Less);
+        assert_eq!(cmp_natural("1", "a"), Ordering::Less);
+        assert_eq!(cmp_natural("a", "A"), Ordering::Less);
+        assert_eq!(cmp_natural("A", "b"), Ordering::Less);
+        assert_eq!(cmp_natural("1", "10"), Ordering::Less);
+        assert_eq!(cmp_natural("2", "10"), Ordering::Less);
+        assert_eq!(cmp_natural("1_1", "1_10"), Ordering::Less);
+        assert_eq!(cmp_natural("1_10", "2_1"), Ordering::Less);
+        assert_eq!(cmp_natural("ab123cd", "ab2345cd"), Ordering::Less);
     }
 }
