@@ -1,4 +1,4 @@
-use egui::{Key, Modifiers, Vec2};
+use egui::{Key, Modifiers, Ui, Vec2};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -10,7 +10,12 @@ use std::{
     sync::LazyLock,
 };
 
-use crate::{common::*, logging::*, ui::UiExt};
+use crate::{
+    common::*,
+    logging::*,
+    ui::UiExt,
+    widgets::{Confirm, TextBox},
+};
 
 enum Direction {
     Up,
@@ -106,28 +111,12 @@ fn init_resources(home: &Path) -> Resouces<PathBuf> {
     resources
 }
 
-#[derive(Clone, Copy)]
-pub struct YesNoDialog {
-    pub curr: bool,
-}
-
-impl YesNoDialog {
-    pub fn new(start: bool) -> Self {
-        YesNoDialog { curr: start }
-    }
-
-    pub fn toggle(mut self) -> Self {
-        self.curr = !self.curr;
-        self
-    }
-}
-
 #[derive(Default)]
-pub enum Dialogs {
+pub enum Dialog {
     #[default]
     None,
-    Filter,
-    Delete(YesNoDialog),
+    Filter(TextBox),
+    Delete(Confirm),
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -152,7 +141,7 @@ pub struct App {
     pub prev_frame_cursor: usize,
     nav_stack: Vec<PathBuf>,
 
-    pub dialogs: Dialogs,
+    pub dialog: Dialog,
     filter_text: String,
     move_to_trash_history: Vec<PathBuf>,
 }
@@ -319,18 +308,15 @@ impl App {
         if self.mode == Mode::Files {
             return;
         }
-        if matches!(self.dialogs, Dialogs::Delete { .. }) {
+        if matches!(self.dialog, Dialog::Delete { .. }) {
             return;
         }
-        self.dialogs = Dialogs::Filter;
+        self.dialog =
+            Dialog::Filter(TextBox::new("filter", &self.filter_text, true));
     }
 
-    pub fn filter_get(&self) -> String {
-        self.filter_text.clone()
-    }
-
-    pub fn filter_update(&mut self, text: String) {
-        self.filter_text = text.to_lowercase();
+    pub fn filter_update(&mut self, text: impl Into<String>) {
+        self.filter_text = text.into();
         self.entries_update();
     }
 
@@ -395,7 +381,12 @@ impl App {
         if is_empty_dir(entry) {
             self.remove_curr();
         } else {
-            self.dialogs = Dialogs::Delete(YesNoDialog::new(true));
+            let title = "Delete permanently";
+            let text = format!(
+                "Do you want to permanently delete this item?\n{}",
+                self.entry_curr().unwrap().display()
+            );
+            self.dialog = Dialog::Delete(Confirm::new(title, text, true));
         }
     }
 
@@ -403,17 +394,17 @@ impl App {
         &mut self,
         ui: &mut egui::Ui,
         key: Key,
-        _mods: Modifiers,
+        mods: Modifiers,
     ) {
         match key {
-            Key::Enter => self.dialogs = Dialogs::None,
+            Key::Enter => self.dialog = Dialog::None,
             Key::Escape => {
-                self.dialogs = Dialogs::None;
-                self.filter_update(String::new());
+                self.dialog = Dialog::None;
+                self.filter_update("");
             }
             Key::ArrowUp | Key::ArrowDown => {
-                self.dialogs = Dialogs::None;
-                self.handle_key(ui, key, Modifiers::NONE)
+                self.dialog = Dialog::None;
+                self.handle_key(ui, key, mods)
             }
             _ => (),
         }
@@ -421,22 +412,22 @@ impl App {
 
     fn handle_key_delete(
         &mut self,
-        dialog: YesNoDialog,
         _ui: &mut egui::Ui,
         key: Key,
         _mods: Modifiers,
     ) {
+        let Dialog::Delete(dialog) = &mut self.dialog else {
+            return;
+        };
         match key {
             Key::Enter => {
                 if dialog.curr {
                     self.remove_curr();
                 }
-                self.dialogs = Dialogs::None;
+                self.dialog = Dialog::None;
             }
-            Key::Escape => self.dialogs = Dialogs::None,
-            Key::ArrowLeft | Key::ArrowRight => {
-                self.dialogs = Dialogs::Delete(dialog.toggle())
-            }
+            Key::Escape => self.dialog = Dialog::None,
+            Key::ArrowLeft | Key::ArrowRight => dialog.toggle(),
             _ => (),
         }
     }
@@ -463,11 +454,9 @@ impl App {
 
     fn handle_input(&mut self, ui: &mut egui::Ui) {
         for (key, mods) in ui.keys_pressed() {
-            match self.dialogs {
-                Dialogs::Filter => self.handle_key_filter(ui, key, mods),
-                Dialogs::Delete(dialog) => {
-                    self.handle_key_delete(dialog, ui, key, mods)
-                }
+            match &self.dialog {
+                Dialog::Filter(_) => self.handle_key_filter(ui, key, mods),
+                Dialog::Delete(_) => self.handle_key_delete(ui, key, mods),
                 _ => self.handle_key(ui, key, mods),
             }
         }
@@ -475,7 +464,7 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         frame_start();
         self.window_size = ui.available_size();
         self.draw(ui, frame);

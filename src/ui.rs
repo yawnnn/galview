@@ -7,7 +7,7 @@ use std::{ops::Sub, path::Path};
 
 use crate::{
     App,
-    app::{Dialogs, Mode, YesNoDialog},
+    app::{Dialog, Mode},
     common::*,
 };
 
@@ -77,30 +77,6 @@ impl GridLayout {
             img_size,
             label_size,
         }
-    }
-}
-
-impl YesNoDialog {
-    fn draw(&self, ui: &mut Ui, title: &str, text: &str) {
-        egui::Window::new(title)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(text);
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        let yes = ui.button("Yes");
-                        let no = ui.button("No");
-                        if self.curr {
-                            yes.request_focus();
-                        } else {
-                            no.request_focus();
-                        }
-                    });
-                });
-            });
     }
 }
 
@@ -234,42 +210,18 @@ impl App {
         }
     }
 
-    fn draw_filter(&mut self, ui: &mut Ui) {
-        let mut text = self.filter_get();
-
-        egui::Window::new("filter")
-            .title_bar(false)
-            .resizable(false)
-            .anchor(egui::Align2::LEFT_BOTTOM, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("filter")
-                            .text_style(egui::TextStyle::Heading),
-                    );
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut text)
-                            .desired_width(300.0),
-                    );
-
-                    response.request_focus();
-
-                    if response.changed() {
-                        self.filter_update(text);
-                    }
-                });
-            });
-    }
-
-    fn draw_delete_dialog(&self, dialog: YesNoDialog, ui: &mut Ui) {
-        dialog.draw(
-            ui,
-            "Delete permanently",
-            &format!(
-                "Do you want to permanently delete this item?\n{}",
-                self.entry_curr().unwrap().display()
-            ),
-        );
+    fn draw_dialog(&mut self, ui: &mut Ui) {
+        // window overlays, drawn on top
+        match &mut self.dialog {
+            Dialog::Filter(dialog) => {
+                if dialog.draw(ui) {
+                    let text = dialog.text.clone();
+                    self.filter_update(text);
+                }
+            }
+            Dialog::Delete(dialog) => dialog.draw(ui),
+            _ => (),
+        }
     }
 
     pub fn draw(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -279,12 +231,6 @@ impl App {
                 Mode::Files => self.draw_files(ui),
             };
         });
-
-        // window overlays, drawn on top
-        match self.dialogs {
-            Dialogs::Filter => self.draw_filter(ui),
-            Dialogs::Delete(dialog) => self.draw_delete_dialog(dialog, ui),
-            _ => (),
-        }
+        self.draw_dialog(ui);
     }
 }

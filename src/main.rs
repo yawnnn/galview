@@ -2,6 +2,7 @@ mod app;
 mod common;
 mod logging;
 mod ui;
+mod widgets;
 
 use crate::{app::*, common::*};
 
