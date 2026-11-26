@@ -247,12 +247,16 @@ impl App {
         self.update_entries();
     }
 
-    fn handle_key_filter(&mut self, _ui: &mut egui::Ui, key: Key) {
+    fn handle_key_filter(&mut self, ui: &mut egui::Ui, key: Key) {
         match key {
             Key::Enter => self.filter_on = false,
             Key::Escape => {
                 self.filter_on = false;
                 self.update_filter(String::new());
+            }
+            Key::ArrowUp | Key::ArrowDown => {
+                self.filter_on = false;
+                self.handle_key(ui, key)
             }
             _ => (),
         }
