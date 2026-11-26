@@ -1,24 +1,31 @@
 use eframe::egui;
 use egui::{
-    CentralPanel, Color32, Event, Image, Key, Label, Panel, Response, RichText,
-    ScrollArea, Ui, Vec2,
+    CentralPanel, Color32, Event, Image, Key, Label, Modifiers, Response,
+    RichText, ScrollArea, Ui, Vec2,
 };
 use std::{ops::Sub, path::Path};
 
-use crate::{App, app::Mode, common::*};
+use crate::{
+    App,
+    app::{Dialogs, Mode, YesNoDialog},
+    common::*,
+};
 
 pub trait UiExt {
-    fn keys_pressed(&self) -> Vec<Key>;
+    fn keys_pressed(&self) -> Vec<(Key, Modifiers)>;
 }
 
 impl UiExt for Ui {
-    fn keys_pressed(&self) -> Vec<Key> {
+    fn keys_pressed(&self) -> Vec<(Key, Modifiers)> {
         let mut keys = Vec::new();
         self.input(|i| {
             keys.extend(i.events.iter().filter_map(|e| match e {
                 Event::Key {
-                    key, pressed: true, ..
-                } => Some(*key),
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => Some((*key, *modifiers)),
                 _ => None,
             }));
         });
@@ -70,6 +77,30 @@ impl GridLayout {
             img_size,
             label_size,
         }
+    }
+}
+
+impl YesNoDialog {
+    fn draw(&self, ui: &mut Ui, title: &str, text: &str) {
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(text);
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        let yes = ui.button("Yes");
+                        let no = ui.button("No");
+                        if self.curr {
+                            yes.request_focus();
+                        } else {
+                            no.request_focus();
+                        }
+                    });
+                });
+            });
     }
 }
 
@@ -206,36 +237,54 @@ impl App {
     fn draw_filter(&mut self, ui: &mut Ui) {
         let mut text = self.filter_get();
 
-        Panel::bottom("filter").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("filter")
-                        .text_style(egui::TextStyle::Heading),
-                );
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut text)
-                        .desired_width(f32::INFINITY),
-                );
+        egui::Window::new("filter")
+            .title_bar(false)
+            .resizable(false)
+            .anchor(egui::Align2::LEFT_BOTTOM, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("filter")
+                            .text_style(egui::TextStyle::Heading),
+                    );
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut text)
+                            .desired_width(300.0),
+                    );
 
-                response.request_focus();
+                    response.request_focus();
 
-                if response.changed() {
-                    self.filter_update(text);
-                }
+                    if response.changed() {
+                        self.filter_update(text);
+                    }
+                });
             });
-        });
+    }
+
+    fn draw_delete_dialog(&self, dialog: YesNoDialog, ui: &mut Ui) {
+        dialog.draw(
+            ui,
+            "Delete permanently",
+            &format!(
+                "Do you want to permanently delete this item?\n{}",
+                self.entry_curr().unwrap().display()
+            ),
+        );
     }
 
     pub fn draw(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        if self.filter_on {
-            self.draw_filter(ui);
-        }
-
         CentralPanel::default().show(ui, |ui| {
             match self.mode {
                 Mode::Dirs => self.draw_dirs(ui),
                 Mode::Files => self.draw_files(ui),
             };
         });
+
+        // window overlays, drawn on top
+        match self.dialogs {
+            Dialogs::Filter => self.draw_filter(ui),
+            Dialogs::Delete(dialog) => self.draw_delete_dialog(dialog, ui),
+            _ => (),
+        }
     }
 }

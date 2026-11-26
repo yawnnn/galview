@@ -1,4 +1,4 @@
-use egui::{Key, Vec2};
+use egui::{Key, Modifiers, Vec2};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -106,6 +106,30 @@ fn init_resources(home: &Path) -> Resouces<PathBuf> {
     resources
 }
 
+#[derive(Clone, Copy)]
+pub struct YesNoDialog {
+    pub curr: bool,
+}
+
+impl YesNoDialog {
+    pub fn new(start: bool) -> Self {
+        YesNoDialog { curr: start }
+    }
+
+    pub fn toggle(mut self) -> Self {
+        self.curr = !self.curr;
+        self
+    }
+}
+
+#[derive(Default)]
+pub enum Dialogs {
+    #[default]
+    None,
+    Filter,
+    Delete(YesNoDialog),
+}
+
 #[derive(Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
@@ -125,10 +149,11 @@ pub struct App {
     pub cursor: usize,
     pub dim_x: usize,
     pub dim_y: usize,
-    pub filter_on: bool,
-    filter_text: String,
     pub prev_frame_cursor: usize,
     nav_stack: Vec<PathBuf>,
+
+    pub dialogs: Dialogs,
+    filter_text: String,
 }
 
 impl App {
@@ -180,6 +205,11 @@ impl App {
 
     pub fn entry_curr(&self) -> Option<&PathBuf> {
         self.entry_get(self.cursor)
+    }
+
+    pub fn entries_refresh(&mut self) {
+        self.raw_entries = dir_entries_sorted_rc(&self.dir);
+        self.entries_update();
     }
 
     fn res_path(&self, id: ResID) -> &Path {
@@ -288,7 +318,10 @@ impl App {
         if self.mode == Mode::Files {
             return;
         }
-        self.filter_on = true;
+        if matches!(self.dialogs, Dialogs::Delete { .. }) {
+            return;
+        }
+        self.dialogs = Dialogs::Filter;
     }
 
     pub fn filter_get(&self) -> String {
@@ -300,22 +333,82 @@ impl App {
         self.entries_update();
     }
 
-    fn handle_key_filter(&mut self, ui: &mut egui::Ui, key: Key) {
+    fn move_to_trash_curr(&mut self) {
+        let Some(p) = self.entry_curr() else { return };
+        match trash::delete(p) {
+            Ok(_) => self.entries_refresh(),
+            Err(e) => eprintln!("Failed to delete {}: {}", p.display(), e),
+        }
+    }
+
+    fn remove_curr(&mut self) {
+        let p = self.entry_curr().unwrap();
+        let e = if p.is_dir() {
+            fs::remove_dir_all(p)
+        } else {
+            fs::remove_file(p)
+        };
+        match e {
+            Ok(_) => self.entries_refresh(),
+            Err(e) => eprintln!("Failed to delete {}: {}", p.display(), e),
+        }
+    }
+
+    fn ask_remove_curr(&mut self) {
+        let Some(entry) = self.entry_curr() else {
+            return;
+        };
+
+        if is_empty_dir(entry) {
+            self.remove_curr();
+        } else {
+            self.dialogs = Dialogs::Delete(YesNoDialog::new(true));
+        }
+    }
+
+    fn handle_key_filter(
+        &mut self,
+        ui: &mut egui::Ui,
+        key: Key,
+        _mods: Modifiers,
+    ) {
         match key {
-            Key::Enter => self.filter_on = false,
+            Key::Enter => self.dialogs = Dialogs::None,
             Key::Escape => {
-                self.filter_on = false;
+                self.dialogs = Dialogs::None;
                 self.filter_update(String::new());
             }
             Key::ArrowUp | Key::ArrowDown => {
-                self.filter_on = false;
-                self.handle_key(ui, key)
+                self.dialogs = Dialogs::None;
+                self.handle_key(ui, key, Modifiers::NONE)
             }
             _ => (),
         }
     }
 
-    fn handle_key(&mut self, ui: &mut egui::Ui, key: Key) {
+    fn handle_key_delete(
+        &mut self,
+        dialog: YesNoDialog,
+        _ui: &mut egui::Ui,
+        key: Key,
+        _mods: Modifiers,
+    ) {
+        match key {
+            Key::Enter => {
+                if dialog.curr {
+                    self.remove_curr();
+                }
+                self.dialogs = Dialogs::None;
+            }
+            Key::Escape => self.dialogs = Dialogs::None,
+            Key::ArrowLeft | Key::ArrowRight => {
+                self.dialogs = Dialogs::Delete(dialog.toggle())
+            }
+            _ => (),
+        }
+    }
+
+    fn handle_key(&mut self, ui: &mut egui::Ui, key: Key, mods: Modifiers) {
         match key {
             Key::ArrowLeft => self.cursor_move(-1, 0),
             Key::ArrowRight => self.cursor_move(1, 0),
@@ -326,17 +419,22 @@ impl App {
             Key::Enter => self.nav_enter(ui),
             Key::Backspace | Key::Escape => self.nav_backward(ui),
             Key::Slash => self.filter_open(),
+            Key::Delete if mods.shift => self.ask_remove_curr(),
+            Key::Delete => self.move_to_trash_curr(),
+            Key::R => self.entries_refresh(),
             Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
             _ => (),
         }
     }
 
     fn handle_input(&mut self, ui: &mut egui::Ui) {
-        for key in ui.keys_pressed() {
-            if self.filter_on {
-                self.handle_key_filter(ui, key);
-            } else {
-                self.handle_key(ui, key);
+        for (key, mods) in ui.keys_pressed() {
+            match self.dialogs {
+                Dialogs::Filter => self.handle_key_filter(ui, key, mods),
+                Dialogs::Delete(dialog) => {
+                    self.handle_key_delete(dialog, ui, key, mods)
+                }
+                _ => self.handle_key(ui, key, mods),
             }
         }
     }

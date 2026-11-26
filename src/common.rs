@@ -165,7 +165,7 @@ fn cmp_natural(a: &str, b: &str) -> cmp::Ordering {
 /// read dir without complications
 pub fn read_dir(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
     dir.read_dir()
-        .unwrap_or_else(|e| panic!("{:?}: {e}", dir))
+        .unwrap_or_else(|e| panic!("{:?}: {e}", dir)) // FIXME: it happens
         .filter_map(|e| e.ok())
         .map(|e| e.path())
 }
@@ -190,6 +190,10 @@ pub fn dir_entries_sorted_rc(dir: &Path) -> Vec<Rc<PathBuf>> {
         cmp_natural(&a, &b)
     });
     entries
+}
+
+pub fn is_empty_dir(path: &Path) -> bool {
+    path.is_dir() && path.read_dir().is_ok_and(|mut it| it.next().is_none())
 }
 
 use egui_extras::loaders::webp_loader;
