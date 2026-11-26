@@ -107,7 +107,7 @@ impl App {
             .contains(&self.filter_text)
     }
 
-    pub fn update_entries(&mut self) {
+    pub fn entries_update(&mut self) {
         self.entries = if self.has_filter() {
             self.raw_entries
                 .iter()
@@ -121,12 +121,12 @@ impl App {
         self.cursor = 0;
     }
 
-    pub fn entry(&self, idx: usize) -> Option<&PathBuf> {
+    pub fn entry_get(&self, idx: usize) -> Option<&PathBuf> {
         self.entries.get(idx).map(|e| e.as_ref())
     }
 
-    pub fn curr_entry(&self) -> Option<&PathBuf> {
-        self.entry(self.cursor)
+    pub fn entry_curr(&self) -> Option<&PathBuf> {
+        self.entry_get(self.cursor)
     }
 
     fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
@@ -143,22 +143,22 @@ impl App {
         }
     }
 
-    fn set_pics_dir(&mut self, dir: PathBuf, entries: Vec<Rc<PathBuf>>) {
+    fn pics_dir_set(&mut self, dir: PathBuf, entries: Vec<Rc<PathBuf>>) {
         if self.dir == dir {
             return;
         }
         self.dir = dir;
         self.raw_entries = entries;
-        self.update_entries();
+        self.entries_update();
     }
 
-    fn set_mode(&mut self, ctx: &egui::Context, mode: Mode) {
+    fn mode_set(&mut self, ctx: &egui::Context, mode: Mode) {
         if self.mode == mode {
             return;
         }
         match mode {
-            Mode::Files => enable_animations(ctx),
-            Mode::Dirs => disable_animations(ctx),
+            Mode::Files => animations_enable(ctx),
+            Mode::Dirs => animations_disable(ctx),
         }
         ctx.forget_all_images();
         ctx.request_repaint(); // after i enabled animation (it shouldn't make a difference anyways cause i dropped everything before)
@@ -166,7 +166,7 @@ impl App {
     }
 
     fn nav_forward(&mut self, ctx: &egui::Context, target: &Path) {
-        if let Some(e) = self.curr_entry().cloned() {
+        if let Some(e) = self.entry_curr().cloned() {
             self.nav_stack.push(e);
         }
 
@@ -181,10 +181,10 @@ impl App {
                 } else {
                     Mode::Dirs
                 };
-            self.set_mode(ctx, new_mode);
-            self.set_pics_dir(dir, entries);
+            self.mode_set(ctx, new_mode);
+            self.pics_dir_set(dir, entries);
         } else if target.is_file() {
-            self.set_mode(ctx, Mode::Files);
+            self.mode_set(ctx, Mode::Files);
         } else {
             panic!("File or directory {target:?} not found");
         }
@@ -193,8 +193,8 @@ impl App {
     fn nav_backward(&mut self, ctx: &egui::Context) {
         let mut dir = self.dir.parent().unwrap().to_owned();
         let entries = nav_towards(&mut dir, Direction::Up);
-        self.set_mode(ctx, Mode::Dirs);
-        self.set_pics_dir(dir, entries);
+        self.mode_set(ctx, Mode::Dirs);
+        self.pics_dir_set(dir, entries);
 
         if let Some(e) = self.nav_stack.pop()
             && let Some(pos) = self
@@ -207,12 +207,12 @@ impl App {
     }
 
     fn nav_enter(&mut self, ui: &mut egui::Ui) {
-        if let Some(entry) = self.curr_entry() {
+        if let Some(entry) = self.entry_curr() {
             self.nav_forward(ui, &entry.clone());
         }
     }
 
-    fn cursor_shift(&mut self, dir_x: isize, dir_y: isize) {
+    fn cursor_move(&mut self, dir_x: isize, dir_y: isize) {
         if self.entries.is_empty() {
             return;
         };
@@ -231,20 +231,20 @@ impl App {
         };
     }
 
-    fn open_filter(&mut self) {
+    fn filter_open(&mut self) {
         if self.mode == Mode::Files {
             return;
         }
         self.filter_on = true;
     }
 
-    pub fn get_filter(&self) -> String {
+    pub fn filter_get(&self) -> String {
         self.filter_text.clone()
     }
 
-    pub fn update_filter(&mut self, text: String) {
+    pub fn filter_update(&mut self, text: String) {
         self.filter_text = text.to_lowercase();
-        self.update_entries();
+        self.entries_update();
     }
 
     fn handle_key_filter(&mut self, ui: &mut egui::Ui, key: Key) {
@@ -252,7 +252,7 @@ impl App {
             Key::Enter => self.filter_on = false,
             Key::Escape => {
                 self.filter_on = false;
-                self.update_filter(String::new());
+                self.filter_update(String::new());
             }
             Key::ArrowUp | Key::ArrowDown => {
                 self.filter_on = false;
@@ -264,15 +264,15 @@ impl App {
 
     fn handle_key(&mut self, ui: &mut egui::Ui, key: Key) {
         match key {
-            Key::ArrowLeft => self.cursor_shift(-1, 0),
-            Key::ArrowRight => self.cursor_shift(1, 0),
-            Key::ArrowUp => self.cursor_shift(0, -1),
-            Key::ArrowDown => self.cursor_shift(0, 1),
+            Key::ArrowLeft => self.cursor_move(-1, 0),
+            Key::ArrowRight => self.cursor_move(1, 0),
+            Key::ArrowUp => self.cursor_move(0, -1),
+            Key::ArrowDown => self.cursor_move(0, 1),
             Key::Home => self.cursor = 0,
             Key::End => self.cursor = self.entries.len() - 1,
             Key::Enter => self.nav_enter(ui),
             Key::Backspace | Key::Escape => self.nav_backward(ui),
-            Key::Slash => self.open_filter(),
+            Key::Slash => self.filter_open(),
             Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
             _ => (),
         }

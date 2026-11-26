@@ -179,7 +179,7 @@ impl App {
 
         ui.vertical_centered(|ui| {
             available_size = ui.available_size();
-            self.draw_image(ui, self.curr_entry().unwrap(), grid.img_size);
+            self.draw_image(ui, self.entry_curr().unwrap(), grid.img_size);
             ui.add(Label::new(
                 RichText::new(format!("{} of {num_entries}", self.cursor + 1))
                     .size(grid.label_size)
@@ -204,7 +204,7 @@ impl App {
     }
 
     fn draw_filter(&mut self, ui: &mut Ui) {
-        let mut text = self.get_filter();
+        let mut text = self.filter_get();
 
         Panel::bottom("filter").show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -220,7 +220,7 @@ impl App {
                 response.request_focus();
 
                 if response.changed() {
-                    self.update_filter(text);
+                    self.filter_update(text);
                 }
             });
         });

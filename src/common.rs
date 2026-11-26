@@ -195,7 +195,7 @@ pub fn dir_entries_sorted_rc(dir: &Path) -> Vec<Rc<PathBuf>> {
 use egui_extras::loaders::webp_loader;
 
 // hack to enable animations
-pub fn enable_animations(ctx: &egui::Context) {
+pub fn animations_enable(ctx: &egui::Context) {
     if !ctx.is_loader_installed(webp_loader::WebPLoader::ID) {
         let webp_loader = webp_loader::WebPLoader::default();
         ctx.add_image_loader(std::sync::Arc::new(webp_loader));
@@ -203,7 +203,7 @@ pub fn enable_animations(ctx: &egui::Context) {
 }
 
 // hack to disable animations: remove the only loader that loads them (so far)
-pub fn disable_animations(ctx: &egui::Context) {
+pub fn animations_disable(ctx: &egui::Context) {
     let loaders = ctx.loaders();
     let mut img_loaders = loaders.image.lock();
     if let Some(pos) = img_loaders
