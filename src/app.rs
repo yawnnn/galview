@@ -154,6 +154,7 @@ pub struct App {
 
     pub dialogs: Dialogs,
     filter_text: String,
+    move_to_trash_history: Vec<PathBuf>,
 }
 
 impl App {
@@ -334,10 +335,42 @@ impl App {
     }
 
     fn move_to_trash_curr(&mut self) {
-        let Some(p) = self.entry_curr() else { return };
-        match trash::delete(p) {
-            Ok(_) => self.entries_refresh(),
+        let Some(p) = self.entry_curr().and_then(|p| p.canonicalize().ok())
+        else {
+            return;
+        };
+        match trash::delete(&p) {
+            Ok(_) => {
+                self.move_to_trash_history.push(p);
+                self.entries_refresh()
+            }
             Err(e) => eprintln!("Failed to delete {}: {}", p.display(), e),
+        }
+    }
+
+    fn restore_from_trash(&mut self) {
+        let Some(p) = self.move_to_trash_history.last().cloned() else {
+            return;
+        };
+        let Ok(list) = trash::os_limited::list() else {
+            eprintln!("Cannot access trash items");
+            return;
+        };
+        let Some(trash_item) =
+            list.into_iter().find(|e| e.original_path() == p)
+        else {
+            self.move_to_trash_history.pop();
+            eprintln!("Couldn't find trash item {}", p.display());
+            return;
+        };
+        match trash::os_limited::restore_all([trash_item]) {
+            Ok(_) => {
+                self.move_to_trash_history.pop();
+                self.entries_refresh();
+            }
+            Err(e) => {
+                eprintln!("Couldn't restore trash item {}: {e}", p.display());
+            }
         }
     }
 
@@ -422,6 +455,7 @@ impl App {
             Key::Delete if mods.shift => self.ask_remove_curr(),
             Key::Delete => self.move_to_trash_curr(),
             Key::R => self.entries_refresh(),
+            Key::Z if mods.ctrl => self.restore_from_trash(),
             Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
             _ => (),
         }
