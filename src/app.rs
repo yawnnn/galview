@@ -1,9 +1,13 @@
 use egui::{Key, Vec2};
 use std::{
     borrow::Cow,
-    env, mem,
+    collections::HashMap,
+    env, fs,
+    io::Write,
+    mem,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::LazyLock,
 };
 
 use crate::{common::*, logging::*, ui::UiExt};
@@ -50,6 +54,58 @@ pub fn find_folder_thumbnail(folder: &Path) -> Option<PathBuf> {
         .and_then(|e| find_folder_thumbnail(e))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum ResID {
+    FolderSvg,
+}
+
+type Resouces<T> = HashMap<ResID, T>;
+
+macro_rules! bundle_resource {
+    ($id:expr, $flname:literal) => {
+        (
+            $id,
+            (
+                $flname,
+                include_bytes!(concat!("../resources/", $flname)).as_slice(),
+            ),
+        )
+    };
+}
+
+static RESOURCE_DATA: LazyLock<Resouces<(&'static str, &'static [u8])>> =
+    LazyLock::new(|| {
+        HashMap::from([bundle_resource!(ResID::FolderSvg, "folder.svg")])
+    });
+
+/// write bundled resources to disk, so i always return a path from find_thumbnail
+/// it's just easier for now
+fn init_resources(home: &Path) -> Resouces<PathBuf> {
+    let xdg_cache = env::var("XDB_CACHE_HOME").unwrap_or_default();
+    let xdg_cache = if xdg_cache.is_empty() {
+        home.join(".cache")
+    } else {
+        PathBuf::from(xdg_cache)
+    };
+    let res_dir = xdg_cache.join(env!("CARGO_PKG_NAME")).join("res");
+    fs::create_dir_all(&res_dir).unwrap_or_else(|e| {
+        panic!("Couldn't create resources directory {res_dir:?}: {e}")
+    });
+    let mut resources = HashMap::new();
+    for (id, (name, bytes)) in RESOURCE_DATA.iter() {
+        let p = res_dir.join(name);
+        if !fs::exists(&p).unwrap_or(false) {
+            fs::File::create(&p)
+                .and_then(|mut fl| fl.write_all(bytes))
+                .unwrap_or_else(|e| {
+                    panic!("Couldn't access resource {p:?}: {e}")
+                });
+        }
+        resources.insert(*id, p);
+    }
+    resources
+}
+
 #[derive(Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
@@ -59,7 +115,7 @@ pub enum Mode {
 
 #[derive(Default)]
 pub struct App {
-    pub res_dir: PathBuf,
+    resources: Resouces<PathBuf>,
     pub window_size: Vec2,
 
     pub mode: Mode,
@@ -78,15 +134,12 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let home = PathBuf::from(env::var("HOME").unwrap());
-        let manifest_dir = PathBuf::from(
-            env::var("CARGO_MANIFEST_DIR").unwrap_or("..".into()),
-        );
-        let res_dir = manifest_dir.join("resources");
         let dir = home.join("Pictures");
+        let resources = init_resources(&home);
         let raw_entries = dir_entries_sorted_rc(&dir);
         let entries = raw_entries.clone();
         App {
-            res_dir,
+            resources,
             dir,
             raw_entries,
             entries,
@@ -129,8 +182,8 @@ impl App {
         self.entry_get(self.cursor)
     }
 
-    fn res_path(&self, name: impl AsRef<Path>) -> PathBuf {
-        self.res_dir.join(name)
+    fn res_path(&self, id: ResID) -> &Path {
+        self.resources.get(&id).unwrap()
     }
 
     pub fn find_thumbnail<'p>(&self, entry: &'p Path) -> Cow<'p, Path> {
@@ -139,7 +192,7 @@ impl App {
         } else if let Some(p) = find_folder_thumbnail(entry) {
             p.into()
         } else {
-            self.res_path("folder.svg").into()
+            self.res_path(ResID::FolderSvg).to_owned().into()
         }
     }
 
