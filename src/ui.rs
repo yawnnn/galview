@@ -232,5 +232,11 @@ impl App {
             };
         });
         self.draw_dialog(ui);
+
+        if let Some(toast) = self.toasts.first()
+            && !toast.draw(ui)
+        {
+            self.toasts.remove(0);
+        }
     }
 }

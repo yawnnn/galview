@@ -14,7 +14,7 @@ use crate::{
     common::*,
     logging::*,
     ui::UiExt,
-    widgets::{Confirm, TextBox},
+    widgets::{Confirm, TextBox, Toast},
 };
 
 enum Direction {
@@ -144,6 +144,7 @@ pub struct App {
     pub dialog: Dialog,
     filter_text: String,
     move_to_trash_history: Vec<PathBuf>,
+    pub toasts: Vec<Toast>,
 }
 
 impl App {
@@ -327,6 +328,11 @@ impl App {
         };
         match trash::delete(&p) {
             Ok(_) => {
+                self.toasts.push(Toast::new(
+                    "Trash",
+                    format!("Moved {} to trash", p.display()),
+                    3.,
+                ));
                 self.move_to_trash_history.push(p);
                 self.entries_refresh()
             }
@@ -351,6 +357,11 @@ impl App {
         };
         match trash::os_limited::restore_all([trash_item]) {
             Ok(_) => {
+                self.toasts.push(Toast::new(
+                    "Trash",
+                    format!("Restored {} from trash", p.display()),
+                    3.,
+                ));
                 self.move_to_trash_history.pop();
                 self.entries_refresh();
             }
@@ -368,7 +379,14 @@ impl App {
             fs::remove_file(p)
         };
         match e {
-            Ok(_) => self.entries_refresh(),
+            Ok(_) => {
+                self.toasts.push(Toast::new(
+                    "Delete",
+                    format!("Deleted {} permanently", p.display()),
+                    3.,
+                ));
+                self.entries_refresh()
+            }
             Err(e) => eprintln!("Failed to delete {}: {}", p.display(), e),
         }
     }
