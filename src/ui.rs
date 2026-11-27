@@ -220,6 +220,9 @@ impl App {
                 }
             }
             Dialog::Delete(dialog) => dialog.draw(ui),
+            Dialog::Rename(dialog) => {
+                dialog.draw(ui);
+            }
             _ => (),
         }
     }

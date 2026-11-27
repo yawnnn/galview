@@ -1,4 +1,7 @@
-use egui::{Color32, RichText, Ui};
+use egui::{
+    Align2, Color32, RichText, TextEdit, TextStyle, Ui,
+    text::{CCursor, CCursorRange},
+};
 use std::time::Instant;
 
 #[derive(Clone)]
@@ -29,7 +32,7 @@ impl Confirm {
         egui::Window::new(&self.title)
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.label(&self.text);
@@ -49,49 +52,127 @@ impl Confirm {
 }
 
 pub struct TextBox {
-    label: String,
     pub text: String,
+    title: String,
+    label: String,
     lowercase: bool,
+    align: Align2,
+    movable: bool,
+    start_selected: bool,
+    anchor_frames: u8,
+    width: f32,
+}
+
+impl Default for TextBox {
+    fn default() -> Self {
+        TextBox {
+            title: String::new(),
+            label: String::new(),
+            text: String::new(),
+            lowercase: false,
+            align: Align2::LEFT_BOTTOM,
+            movable: false,
+            start_selected: false,
+            anchor_frames: 2,
+            width: 300.0,
+        }
+    }
 }
 
 impl TextBox {
-    pub fn new(
-        label: impl Into<String>,
-        initial: impl Into<String>,
-        lowercase: bool,
-    ) -> Self {
+    pub fn new(text: impl Into<String>) -> Self {
         TextBox {
-            label: label.into(),
-            text: initial.into(),
-            lowercase,
+            text: text.into(),
+            ..Self::default()
         }
+    }
+
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+
+    pub fn lowercase(mut self, lowercase: bool) -> Self {
+        self.lowercase = lowercase;
+        self
+    }
+
+    /// Set alignment. If `movable`, this is the initial position; otherwise it's the anchor.
+    pub fn align(mut self, align: Align2) -> Self {
+        self.align = align;
+        self
+    }
+
+    pub fn movable(mut self, movable: bool) -> Self {
+        self.movable = movable;
+        self
+    }
+
+    pub fn start_selected(mut self, start_selected: bool) -> Self {
+        self.start_selected = start_selected;
+        self
     }
 
     pub fn draw(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
+        let has_title = !self.title.is_empty();
 
-        egui::Window::new("")
-            .title_bar(false)
+        let mut window = egui::Window::new(&self.title)
+            .title_bar(has_title)
             .resizable(false)
-            .anchor(egui::Align2::LEFT_BOTTOM, [0.0, 0.0])
-            .show(ui.ctx(), |ui| {
-                ui.horizontal(|ui| {
+            .collapsible(false);
+
+        if self.movable && self.anchor_frames > 0 {
+            // frames 0..2: anchor to force position (need 2 frames for size to settle)
+            window = window.anchor(self.align, [0.0, 0.0]).movable(false);
+            self.anchor_frames -= 1;
+        } else if self.movable {
+            // frames > 2: movable, no anchor
+            window = window.movable(true);
+        } else {
+            // not movable: always anchored
+            window = window.anchor(self.align, [0.0, 0.0]).movable(false);
+        }
+
+        window.show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                if !self.label.is_empty() {
                     ui.label(
                         RichText::new(&self.label)
-                            .text_style(egui::TextStyle::Heading),
+                            .text_style(TextStyle::Heading),
                     );
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut self.text)
-                            .desired_width(300.0),
-                    );
+                }
 
-                    response.request_focus();
-                    changed = response.changed();
-                    if changed && self.lowercase {
-                        self.text = self.text.to_lowercase();
+                let response = ui.add(
+                    TextEdit::singleline(&mut self.text)
+                        .desired_width(self.width),
+                );
+
+                if self.start_selected {
+                    if let Some(mut state) =
+                        TextEdit::load_state(ui.ctx(), response.id)
+                    {
+                        state.cursor.set_char_range(Some(CCursorRange::two(
+                            CCursor::new(0),
+                            CCursor::new(self.text.chars().count()),
+                        )));
+                        state.store(ui.ctx(), response.id);
                     }
-                });
+                    self.start_selected = false;
+                }
+
+                response.request_focus();
+                changed = response.changed();
+                if changed && self.lowercase {
+                    self.text = self.text.to_lowercase();
+                }
             });
+        });
 
         changed
     }
@@ -105,7 +186,11 @@ pub struct Toast {
 }
 
 impl Toast {
-    pub fn new(title: impl Into<String>, text: impl Into<String>, duration_secs: f32) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        text: impl Into<String>,
+        duration_secs: f32,
+    ) -> Self {
         Toast {
             title: title.into(),
             text: text.into(),

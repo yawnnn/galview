@@ -117,6 +117,7 @@ pub enum Dialog {
     None,
     Filter(TextBox),
     Delete(Confirm),
+    Rename(TextBox),
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -305,15 +306,22 @@ impl App {
         };
     }
 
+    fn has_dialog(&self) -> bool {
+        !matches!(self.dialog, Dialog::None)
+    }
+
     fn filter_open(&mut self) {
         if self.mode == Mode::Files {
             return;
         }
-        if matches!(self.dialog, Dialog::Delete { .. }) {
+        if self.has_dialog() {
             return;
         }
-        self.dialog =
-            Dialog::Filter(TextBox::new("filter", &self.filter_text, true));
+        self.dialog = Dialog::Filter(
+            TextBox::new(&self.filter_text)
+                .label("filter")
+                .lowercase(true),
+        );
     }
 
     pub fn filter_update(&mut self, text: impl Into<String>) {
@@ -408,6 +416,44 @@ impl App {
         }
     }
 
+    fn rename_open(&mut self) {
+        let Some(entry) = self.entry_curr() else {
+            return;
+        };
+        if self.has_dialog() {
+            return;
+        }
+
+        let name = entry.file_name().unwrap().to_str().unwrap();
+        self.dialog = Dialog::Rename(
+            TextBox::new(name)
+                .title("Rename")
+                .align(egui::Align2::CENTER_CENTER)
+                .movable(true)
+                .start_selected(true),
+        );
+    }
+
+    fn rename_curr(&mut self, new_name: &str) {
+        let Some(old) = self.entry_curr().cloned() else {
+            return;
+        };
+        let new_name = new_name.trim().to_owned();
+        if new_name.is_empty() {
+            return;
+        }
+        let new = old.parent().unwrap().join(new_name);
+        if new == old {
+            return;
+        }
+        match fs::rename(&old, &new) {
+            Ok(_) => self.entries_refresh(),
+            Err(e) => {
+                eprintln!("Failed to rename {}: {}", old.display(), e);
+            }
+        }
+    }
+
     fn handle_key_filter(
         &mut self,
         ui: &mut egui::Ui,
@@ -450,6 +496,23 @@ impl App {
         }
     }
 
+    fn handle_key_rename(
+        &mut self,
+        _ui: &mut egui::Ui,
+        key: Key,
+        _mods: Modifiers,
+    ) {
+        match key {
+            Key::Enter => {
+                if let Dialog::Rename(tb) = mem::take(&mut self.dialog) {
+                    self.rename_curr(&tb.text);
+                }
+            }
+            Key::Escape => self.dialog = Dialog::None,
+            _ => (),
+        }
+    }
+
     fn handle_key(&mut self, ui: &mut egui::Ui, key: Key, mods: Modifiers) {
         match key {
             Key::ArrowLeft => self.cursor_move(-1, 0),
@@ -466,6 +529,7 @@ impl App {
             Key::R => self.entries_refresh(),
             Key::Z if mods.ctrl => self.restore_from_trash(),
             Key::Q => ui.send_viewport_cmd(egui::ViewportCommand::Close),
+            Key::F2 => self.rename_open(),
             _ => (),
         }
     }
@@ -475,6 +539,7 @@ impl App {
             match &self.dialog {
                 Dialog::Filter(_) => self.handle_key_filter(ui, key, mods),
                 Dialog::Delete(_) => self.handle_key_delete(ui, key, mods),
+                Dialog::Rename(_) => self.handle_key_rename(ui, key, mods),
                 _ => self.handle_key(ui, key, mods),
             }
         }
